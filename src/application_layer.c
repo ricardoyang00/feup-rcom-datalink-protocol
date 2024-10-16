@@ -9,51 +9,16 @@
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
                       int nTries, int timeout, const char *filename)
 {
-    LinkLayer connectionParameters = {
+    LinkLayer linkLayer = {
         .baudRate = baudRate,
         .nRetransmissions = nTries,
         .timeout = timeout
     };
 
-    strcpy(connectionParameters.serialPort,serialPort);
-    connectionParameters.role = strcmp(role,"tx") == 0 ? LlTx : LlRx;
+    strcpy(linkLayer.serialPort,serialPort);
+    linkLayer.role = strcmp(role,"tx") == 0 ? LlTx : LlRx;
 
-    llopen(connectionParameters);
-    /*
-    if (strcmp(role, "tx") == 0)
-    {
-        applicationLayerTransmitter(serialPort, role, baudRate, nTries, timeout, filename);
-    }
-    else if (strcmp(role, "rx") == 0)
-    {
-        printf("Receiver\n");
-    }
-    else
-    {
-        printf("Invalid role\n");
-    }*/
-}
-/*
-void applicationLayerTransmitter(const char *serialPort, const char *role, int baudRate,
-                      int nTries, int timeout, const char *filename) {
+    if (llopen(linkLayer) != 1) return;
 
-    LinkLayer connectionParameters = {
-        .serialPort = serialPort,
-        .role = LlTx,
-        .baudRate = baudRate,
-        .nRetransmissions = nTries,
-        .timeout = timeout
-    };
 }
 
-void applicationLayerReceiver(const char *serialPort, const char *role, int baudRate,
-                      int nTries, int timeout, const char *filename) {
-
-    LinkLayer connectionParameters = {
-        .serialPort = serialPort,
-        .role = LlRx,
-        .baudRate = baudRate,
-        .nRetransmissions = nTries,
-        .timeout = timeout
-    };
-}*/

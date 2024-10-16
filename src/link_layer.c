@@ -24,7 +24,7 @@ int alarmCount = 0;
 // Alarm function handler
 void alarmHandler(int signal)
 {
-    printf("Alarm #%d\n", alarmCount);
+    printf("Alarm #%d\n", alarmCount + 1);
     
     alarmEnabled = FALSE;
     alarmCount++;
@@ -56,6 +56,7 @@ int llopen(LinkLayer connectionParameters) {
             while (alarmCount < connectionParameters.nRetransmissions) {
 
                 if (sendSVF(A_T, C_SET) < 0) return -1;
+                printf("TR: Sent SET Buffer Sucessfully\n");
 
                 alarm(connectionParameters.timeout);
                 alarmEnabled = TRUE;
@@ -96,7 +97,14 @@ int llopen(LinkLayer connectionParameters) {
                             break;
                     }
                 }
+
+                if (state == STOP_STATE) {
+                    printf("TR: Received UA Buffer Sucessfully\n");
+                    break;
+                }
+                
             }
+
             if (state != STOP_STATE) return -1;
             break; 
         }
@@ -139,7 +147,11 @@ int llopen(LinkLayer connectionParameters) {
                     }
             }
 
+            printf("RCV: Received SET buffer Sucessfully\n");
+            
             if (sendSVF(A_R, C_UA) < 0) return -1;
+
+            printf("RCV: Sent UA buffer Sucessfully\n");
 
             break;
     }
