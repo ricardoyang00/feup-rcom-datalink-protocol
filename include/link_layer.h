@@ -4,11 +4,33 @@
 #ifndef _LINK_LAYER_H_
 #define _LINK_LAYER_H_
 
+#define BUF_SIZE 1024
+
+#define FLAG 0x7E
+#define ESC 0x7D
+#define A_T 0x03
+#define A_R 0x01
+#define C_SET 0x03
+#define C_UA 0x07
+#define C_DISC 0x0B
+
+#define FALSE 0
+#define TRUE 1
+
 typedef enum
 {
     LlTx,
     LlRx,
 } LinkLayerRole;
+
+typedef enum {
+    START_STATE, 
+    FLAG_RCV,
+    A_RCV, 
+    C_RCV, 
+    BCC_OK, 
+    STOP_STATE
+} LinkLayerState;
 
 typedef struct
 {
@@ -43,5 +65,7 @@ int llread(unsigned char *packet);
 // if showStatistics == TRUE, link layer should print statistics in the console on close.
 // Return "1" on success or "-1" on error.
 int llclose(int showStatistics);
+
+int sendSVF(unsigned char A, unsigned char C);
 
 #endif // _LINK_LAYER_H_
