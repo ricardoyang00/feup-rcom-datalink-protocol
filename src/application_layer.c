@@ -4,19 +4,20 @@
 #include "link_layer.h"
 
 #include <stdio.h>
+#include <string.h>
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
                       int nTries, int timeout, const char *filename)
 {
     LinkLayer connectionParameters = {
-        .serialPort = *serialPort,
-        .role = *role,
         .baudRate = baudRate,
         .nRetransmissions = nTries,
         .timeout = timeout
     };
 
-    printf("hello\n\n\n\n");
+    strcpy(connectionParameters.serialPort,serialPort);
+    connectionParameters.role = strcmp(role,"tx") == 0 ? LlTx : LlRx;
+
     llopen(connectionParameters);
     /*
     if (strcmp(role, "tx") == 0)

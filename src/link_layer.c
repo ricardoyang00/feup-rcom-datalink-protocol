@@ -12,7 +12,6 @@
 #include <termios.h>
 #include <unistd.h>
 
-
 // MISC
 #define _POSIX_SOURCE 1 // POSIX compliant source
 
@@ -36,13 +35,11 @@ void alarmHandler(int signal)
 // LLOPEN
 ////////////////////////////////////////////////
 int llopen(LinkLayer connectionParameters) {
-    printf("open\n");
     if (openSerialPort(connectionParameters.serialPort, connectionParameters.baudRate) < 0) {
         return -1;
     }
-    printf("open\n");
+
     int fd = openSerialPort(connectionParameters.serialPort, connectionParameters.baudRate);
-    printf("%d\n", fd);
     if (fd < 0) return -1;
 
     LinkLayerState state = START_STATE;
@@ -57,15 +54,14 @@ int llopen(LinkLayer connectionParameters) {
             (void) signal(SIGALRM, alarmHandler);
 
             while (alarmCount < connectionParameters.nRetransmissions) {
-                unsigned char buf_T[5] = {FLAG, A_T, C_SET, A_T ^ C_SET, FLAG};
-                int bufSize = 5;
-                if (write(fd, buf_T, bufSize) < 0) return -1;
+
+                if (sendSVF(A_T, C_SET) < 0) return -1;
 
                 alarm(connectionParameters.timeout);
                 alarmEnabled = TRUE;
                 
                 while (state != STOP_STATE && alarmEnabled) {
-                    if (read(fd, &byte, 1) <= 0) continue;
+                    if (readByteSerialPort(&byte) <= 0) continue;
                     
                     switch (state) {
                         case START_STATE:
@@ -107,7 +103,7 @@ int llopen(LinkLayer connectionParameters) {
         case LlRx:
 
             while (state != STOP_STATE) {
-                if (read(fd, &byte, 1) <= 0) continue;
+                if (readByteSerialPort(&byte) <= 0) continue;
                 
                 switch (state) {
                         case START_STATE:
@@ -143,9 +139,7 @@ int llopen(LinkLayer connectionParameters) {
                     }
             }
 
-            unsigned char buf_R[5] = {FLAG, A_R, C_UA, A_R ^ C_UA, FLAG};
-            int bufSize = 5;
-            if (write(fd, buf_R, bufSize) < 0) return -1;
+            if (sendSVF(A_R, C_UA) < 0) return -1;
 
             break;
     }
@@ -182,4 +176,10 @@ int llclose(int showStatistics)
 
     int clstat = closeSerialPort();
     return clstat;
+}
+
+int sendSVF(unsigned char A, unsigned char C) {
+    unsigned char buf_T[5] = {FLAG, A, C, A ^ C, FLAG};
+
+    return (writeBytesSerialPort(buf_T, 5) < 0);
 }
