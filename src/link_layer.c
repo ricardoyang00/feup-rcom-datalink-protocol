@@ -44,7 +44,6 @@ int llopen(LinkLayer connectionParameters) {
     if (openSerialPort(connectionParameters.serialPort, connectionParameters.baudRate) < 0) return -1;
 
     LinkLayerState state = START_STATE;
-    unsigned char checkBuffer[2] = {0};
     unsigned char byte;
 
     timeout = connectionParameters.timeout;
@@ -72,23 +71,17 @@ int llopen(LinkLayer connectionParameters) {
                             if (byte == FLAG) state = FLAG_RCV;
                             break;
                         case FLAG_RCV:
-                            if (byte == A_R) {
-                                state = A_RCV;
-                                checkBuffer[0] = byte;
-                            }
+                            if (byte == A_R) state = A_RCV;
                             else if (byte != FLAG) state = START_STATE;
                             break;
                         case A_RCV:
-                            if (byte == C_UA) {
-                                state = C_RCV;
-                                checkBuffer[1] = byte;
-                            }
+                            if (byte == C_UA) state = C_RCV;
                             else if (byte == FLAG) state = FLAG_RCV;
                             else state = START_STATE;
                             break;
                         case C_RCV:
                             if (byte == FLAG) state = FLAG_RCV;
-                            else if ((checkBuffer[0] ^ checkBuffer[1]) == byte) state = BCC_OK;
+                            else if ((A_R ^ C_UA) == byte) state = BCC_OK;
                             else state = START_STATE;
                             break;
                         case BCC_OK:
@@ -96,7 +89,6 @@ int llopen(LinkLayer connectionParameters) {
                             else state = START_STATE;
                             break;
                         default:
-                            state = START_STATE;
                             break;
                     }
                 }
@@ -121,23 +113,17 @@ int llopen(LinkLayer connectionParameters) {
                             if (byte == FLAG) state = FLAG_RCV;
                             break;
                         case FLAG_RCV:
-                            if (byte == A_T) {
-                                state = A_RCV;
-                                checkBuffer[0] = byte;
-                            }
+                            if (byte == A_T) state = A_RCV;
                             else if (byte != FLAG) state = START_STATE;
                             break;
                         case A_RCV:
-                            if (byte == C_SET) {
-                                state = C_RCV;
-                                checkBuffer[1] = byte;
-                            }
+                            if (byte == C_SET) state = C_RCV;
                             else if (byte == FLAG) state = FLAG_RCV;
                             else state = START_STATE;
                             break;
                         case C_RCV:
                             if (byte == FLAG) state = FLAG_RCV;
-                            else if ((checkBuffer[0] ^ checkBuffer[1]) == byte) state = BCC_OK;
+                            else if ((A_T ^ C_SET) == byte) state = BCC_OK;
                             else state = START_STATE;
                             break;
                         case BCC_OK:
@@ -145,7 +131,6 @@ int llopen(LinkLayer connectionParameters) {
                             else state = START_STATE;
                             break;
                         default:
-                            state = START_STATE;
                             break;
                     }
             }
@@ -185,7 +170,7 @@ int llwrite(const unsigned char *buf, int bufSize)
     for (int i = 0; i < bufSize; i++) {
         switch (buf[i]) {
             case FLAG:
-                frame = realloc(frame,++frameSize);
+                frame = realloc(frame, ++frameSize);
                 frame[currentFrameIndex++] = ESC;
                 frame[currentFrameIndex++] = SUF_FLAG;
                 break;
@@ -203,22 +188,23 @@ int llwrite(const unsigned char *buf, int bufSize)
     frame[currentFrameIndex++] = BCC2;
     frame[currentFrameIndex] = FLAG;
 
-    int accepted = 0, rejected = 0;
+    int isAccepted = FALSE, isRejected = FALSE;
     int alarmCount = 0;
     (void) signal(SIGALRM, alarmHandler);
 
     alarmEnabled = FALSE;
 
     while (alarmCount < retransmissions) {
-        accepted = 0;
-        rejected = 0;
+        isAccepted = FALSE;
+        isRejected = FALSE;
 
         alarm(timeout);
         alarmEnabled = TRUE;
 
-        while (alarmEnabled && !accepted && !rejected) {
-            writeBytesSerialPort(frame, currentFrameIndex + 1);
+        while (alarmEnabled && !isAccepted && !isRejected) {
+            writeBytesSerialPort(frame, ++currentFrameIndex);
             
+            unsigned char byte_C = 0;
             unsigned char byte;
             LinkLayerState state = START_STATE;
 
@@ -234,14 +220,39 @@ int llwrite(const unsigned char *buf, int bufSize)
                         else if (byte != FLAG) state = START_STATE;
                         break;
                     case A_RCV:
-                        if (byte == )
+                        if (byte == RR0 || byte == RR1 || byte == REJ0 || byte == REJ1) {
+                            state = C_RCV;
+                            tempByte_A = byte;
+
+                            if (byte == RR0 || byte == RR1) isAccepted = TRUE;
+                            else isRejected = TRUE;
+                        }
+                        else if (byte == FLAG) state = FLAG_RCV;
+                        else state = START_STATE;
+                        break;
+                    case C_RCV:
+                        if (byte == FLAG) state = FLAG_RCV;
+                        else if ((A_R ^ tempByte_A) == byte) state = BCC_OK;
+                        else state = START_STATE;
+                        break;
+                    case BCC_OK:
+                        if (byte == FLAG) state = STOP_STATE;
+                        else state = START_STATE;
+                        break;
+                    default:
+                        break;
                 }
             }
         }
 
+        if (isAccepted) break;
+        
     }
 
-    return 0;
+    free(frame);
+    if (isAccepted) return frameSize;
+        
+    return -1;
 }
 
 ////////////////////////////////////////////////
