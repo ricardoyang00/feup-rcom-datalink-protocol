@@ -13,6 +13,14 @@
 #define C_SET 0x03
 #define C_UA 0x07
 #define C_DISC 0x0B
+#define SUF_FLAG 0x5E
+#define SUF_ESC 0x5D
+#define RR0 0xAA
+#define RR1 0xAB
+#define REJ0 0x54
+#define REJ1 0x55
+
+#define C_N(Ns) (unsigned char)(Ns << 6)
 
 #define FALSE 0
 #define TRUE 1
