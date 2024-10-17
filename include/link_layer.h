@@ -15,12 +15,12 @@
 #define C_DISC 0x0B
 #define SUF_FLAG 0x5E
 #define SUF_ESC 0x5D
-#define RR0 0xAA
-#define RR1 0xAB
 #define REJ0 0x54
 #define REJ1 0x55
 
 #define C_N(Ns) (unsigned char)(Ns << 6)
+#define C_RR(Nr) (0xAA | Nr)
+#define C_REJ(Nr) (0x54 | Nr)
 
 #define FALSE 0
 #define TRUE 1
@@ -37,7 +37,9 @@ typedef enum {
     A_RCV, 
     C_RCV, 
     BCC_OK, 
-    STOP_STATE
+    STOP_STATE,
+    DATA_STATE,
+    ESC_STATE
 } LinkLayerState;
 
 typedef struct

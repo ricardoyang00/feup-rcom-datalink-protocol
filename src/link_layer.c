@@ -22,10 +22,10 @@ int alarmEnabled = FALSE;
 int alarmCount = 0;
 
 int timeout = 0;
-int retransmitions = 0;
+int retransmissions = 0;
 
-int tramaTransmitter = 0;
-int tramaReceiver = 1;
+int tramaRx = 0;
+int tramaTx = 0;
 
 // Alarm function handler
 void alarmHandler(int signal)
@@ -47,7 +47,7 @@ int llopen(LinkLayer connectionParameters) {
     unsigned char byte;
 
     timeout = connectionParameters.timeout;
-    retransmissions = connectionParameters.retransmissions;
+    retransmissions = connectionParameters.nRetransmissions;
 
     switch (connectionParameters.role) {
         case LlTx: {
@@ -64,7 +64,7 @@ int llopen(LinkLayer connectionParameters) {
                 alarmEnabled = TRUE;
                 
                 while (state != STOP_STATE && alarmEnabled) {
-                    if (readByteSerialPort(&byte) <= 0) continue;
+                    if (readByteSerialPort(&byte) < 0) continue;
                     
                     switch (state) {
                         case START_STATE:
@@ -106,7 +106,7 @@ int llopen(LinkLayer connectionParameters) {
         case LlRx:
 
             while (state != STOP_STATE) {
-                if (readByteSerialPort(&byte) <= 0) continue;
+                if (readByteSerialPort(&byte) < 0) continue;
                 
                 switch (state) {
                         case START_STATE:
@@ -156,7 +156,7 @@ int llwrite(const unsigned char *buf, int bufSize)
     unsigned char *frame = malloc(frameSize);
     frame[0] = FLAG;
     frame[1] = A_T;
-    frame[2] = C_N(tramaTransmitter);
+    frame[2] = Ns(tramaRx);
     frame[3] = frame[1] ^ frame[2];
 
     memcpy(frame + 4, buf, bufSize);
@@ -220,19 +220,21 @@ int llwrite(const unsigned char *buf, int bufSize)
                         else if (byte != FLAG) state = START_STATE;
                         break;
                     case A_RCV:
-                        if (byte == RR0 || byte == RR1 || byte == REJ0 || byte == REJ1) {
+                        if (byte == C_RR(0) || byte == C_RR(1) | byte == C_REJ(0) || byte == C_REJ(1)) {
                             state = C_RCV;
-                            tempByte_A = byte;
+                            byte_C = byte;
 
-                            if (byte == RR0 || byte == RR1) isAccepted = TRUE;
-                            else isRejected = TRUE;
+                            if (byte == C_RR(0) || byte == C_RR(1)) {
+                                isAccepted = TRUE;
+                                nextTramaTx();
+                            } else isRejected = TRUE;
                         }
                         else if (byte == FLAG) state = FLAG_RCV;
                         else state = START_STATE;
                         break;
                     case C_RCV:
                         if (byte == FLAG) state = FLAG_RCV;
-                        else if ((A_R ^ tempByte_A) == byte) state = BCC_OK;
+                        else if ((A_R ^ byte_C) == byte) state = BCC_OK;
                         else state = START_STATE;
                         break;
                     case BCC_OK:
@@ -250,6 +252,8 @@ int llwrite(const unsigned char *buf, int bufSize)
     }
 
     free(frame);
+
+    //if (closeSerialPort() == -1) return -1;
     if (isAccepted) return frameSize;
         
     return -1;
@@ -260,9 +264,78 @@ int llwrite(const unsigned char *buf, int bufSize)
 ////////////////////////////////////////////////
 int llread(unsigned char *packet)
 {
-    // TODO
+    unsigned char byte_C;
+    unsigned char byte;
+    //unsigned char BCC2;
+    //bool isFirstDataByte = true;
+    LinkLayerState state = START_STATE;
 
-    return 0;
+    int currentFrameIndex = 0;
+    
+    while (state != STOP_STATE) {
+        if (readByteSerialPort(&byte) < 0) continue;
+
+        switch state {
+            case START_STATE:
+                if (byte == FLAG) state = FLAG_RCV;
+                break;
+            case FLAG_RCV:
+                if (byte == A_T) state = A_RCV;
+                else if (byte != FLAG) state = START_STATE;
+                break;
+            case A_RCV:
+                if (byte == C_N(0) || byte == C_N(1)) {
+                    state = C_RCV;
+                    byte_C = byte;
+                }
+                else if (byte == FLAG) state = FLAG_RCV;
+                else if (byte == C_DISC) {
+                    sendSVF(A_R, C_DISC);
+                    return 0;
+                }
+                else state = START_STATE;
+                break;
+            case C_RCV:
+                if (byte == FLAG) state = FLAG_RCV;
+                else if ((A_T ^ byte_C) == byte) state = DATA_STATE;
+                else state = START_STATE;
+                break;
+            case DATA_STATE:
+                if (byte == ESC) state = ESC_STATE;
+                else if (byte == FLAG) {
+                    unsigned char BCC2 = packet[currentFrameIndex - 1];
+                    currentFrameIndex--;
+                    packet[currentFrameIndex] = '\0';
+                    
+                    unsigned char xor = packet[0];
+                    for (int i = 1; i < currentFrameIndex; i++) {
+                        xor ^= packet[i];
+                    }
+
+                    if (xor == BCC2) {
+                        sendSVF(A_R, C_RR(tramaRx));
+                        nextTramaRx();
+                        return currentFrameIndex;
+                    } else {
+                        printf("RCV Error: BCC2 does not match\n");
+                        sendSVF(A_R, C_REJ(tramaRx));
+                        return -1;
+                    }
+                }
+                else packet[currentFrameIndex++] = byte;
+                break;
+            case ESC_STATE:
+                if (byte == SUF_FLAG) packet[currentFrameIndex++] = FLAG;
+                else if (byte == SUF_ESC) packet[currentFrameIndex++] = ESC;
+                else packet[currentFrameIndex++] = byte;
+                state = DATA_STATE;
+                break;
+            default:
+                break;        
+        }
+    }
+
+    return -1;
 }
 
 ////////////////////////////////////////////////
@@ -280,4 +353,26 @@ int sendSVF(unsigned char A, unsigned char C) {
     unsigned char buf_T[5] = {FLAG, A, C, A ^ C, FLAG};
 
     return (writeBytesSerialPort(buf_T, 5) < 0);
+}
+
+void nextTramaTx() {
+    tramaTx = tramaTx == 0 ? 1 : 0;
+}
+
+void nextTramaRx() {
+    tramaRx = tramaRx == 0 ? 1 : 0;
+}
+
+int currentRR() {
+    int resultRR = currentRR == 0 ? RR0 : RR1;
+    currentRR = currentRR == 0 ? 1 : 0;
+
+    return resultRR;
+}
+
+int currentREJ() {
+    int resultREJ = currentREJ == 0 ? REJ0 : REJ1;
+    currentREJ = currentREJ == 0 ? 1 : 0;
+
+    return resultREJ;
 }
