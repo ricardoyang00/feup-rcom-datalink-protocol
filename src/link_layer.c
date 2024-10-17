@@ -64,7 +64,7 @@ int llopen(LinkLayer connectionParameters) {
                 alarmEnabled = TRUE;
                 
                 while (state != STOP_STATE && alarmEnabled) {
-                    if (readByteSerialPort(&byte) < 0) continue;
+                    if (readByteSerialPort(&byte) <= 0) continue;
                     
                     switch (state) {
                         case START_STATE:
@@ -106,7 +106,7 @@ int llopen(LinkLayer connectionParameters) {
         case LlRx:
 
             while (state != STOP_STATE) {
-                if (readByteSerialPort(&byte) < 0) continue;
+                if (readByteSerialPort(&byte) <= 0) continue;
                 
                 switch (state) {
                         case START_STATE:
@@ -273,7 +273,7 @@ int llread(unsigned char *packet)
     int currentFrameIndex = 0;
     
     while (state != STOP_STATE) {
-        if (readByteSerialPort(&byte) < 0) continue;
+        if (readByteSerialPort(&byte) <= 0) continue;
 
         switch state {
             case START_STATE:
@@ -341,12 +341,53 @@ int llread(unsigned char *packet)
 ////////////////////////////////////////////////
 // LLCLOSE
 ////////////////////////////////////////////////
-int llclose(int showStatistics)
-{
-    // TODO
+int llclose(int showStatistics) {
+    
+    unsigned char byte;
+    LinkLayerState state = START_STATE;
 
-    int clstat = closeSerialPort();
-    return clstat;
+    (void) signal(SIGALRM, alarmHandler);
+
+    while (state != STOP_STATE && retransmissions != 0) {
+
+        sendSVF(A_T, C_DISC);
+        alarm(timeout);
+        alarmEnabled = true;
+        
+        while (state != STOP_STATE && alarmEnabled) {
+            if (readByteSerialPort(&byte) <= 0) continue;
+        
+            switch (state) {
+                case START_STATE:
+                    if (byte == FLAG) state = FLAG_RCV;
+                    break;
+                case FLAG_RCV:
+                    if (byte == A_R) state = A_RCV;
+                    else if (byte != FLAG) state = START_STATE;
+                    break;
+                case A_RCV:
+                    if (byte == C_DISC) state = C_RCV;
+                    else if (byte == FLAG) state = FLAG_RCV;
+                    else state = START_STATE;
+                    break;
+                case C_RCV:
+                    if (byte == (A_R ^ C_DISC)) state = BCC_OK;
+                    else if (byte == FLAG) state = FLAG_RCV;
+                    else state = START_STATE;
+                    break;
+                case BCC_OK:
+                    if (byte == FLAG) state = STOP_STATE;
+                    else state = START_STATE;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    sendSVF(A_T, C_UA);
+    
+    return closeSerialPort();
 }
 
 int sendSVF(unsigned char A, unsigned char C) {
@@ -361,18 +402,4 @@ void nextTramaTx() {
 
 void nextTramaRx() {
     tramaRx = tramaRx == 0 ? 1 : 0;
-}
-
-int currentRR() {
-    int resultRR = currentRR == 0 ? RR0 : RR1;
-    currentRR = currentRR == 0 ? 1 : 0;
-
-    return resultRR;
-}
-
-int currentREJ() {
-    int resultREJ = currentREJ == 0 ? REJ0 : REJ1;
-    currentREJ = currentREJ == 0 ? 1 : 0;
-
-    return resultREJ;
 }
