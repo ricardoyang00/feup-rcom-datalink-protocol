@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <termios.h>
 #include <unistd.h>
+#include <signal.h>
 
 // MISC
 #define _POSIX_SOURCE 1 // POSIX compliant source
@@ -208,7 +209,7 @@ int llwrite(const unsigned char *buf, int bufSize) {
                         break;
 
                     case A_RCV:
-                        if (byte == C_RR(0) || byte == C_RR(1) | byte == C_REJ(0) || byte == C_REJ(1)) {
+                        if (byte == C_RR(0) || byte == C_RR(1) || byte == C_REJ(0) || byte == C_REJ(1)) {
                             state = C_RCV;
                             byte_C = byte;
 

@@ -23,18 +23,18 @@ RX_FILE = penguin-received.gif
 all: $(BIN)/main $(BIN)/cable
 
 $(BIN)/main: main.c $(SRC)/*.c
-	$(CC) $(CFLAGS) -o $@ $^ -I$(INCLUDE)
+	$(CC) $(CFLAGS) -o $@ $^ -I$(INCLUDE) -lm
 
 $(BIN)/cable: $(CABLE_DIR)/cable.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 .PHONY: run_tx
 run_tx: $(BIN)/main
-	./$(BIN)/main $(TX_SERIAL_PORT) $(BAUD_RATE) tx $(TX_FILE)
+	./$(BIN)/main $(TX_SERIAL_PORT) $(BAUD_RATE) tx $(TX_FILE) -lm
 
 .PHONY: run_rx
 run_rx: $(BIN)/main
-	./$(BIN)/main $(RX_SERIAL_PORT) $(BAUD_RATE) rx $(RX_FILE)
+	./$(BIN)/main $(RX_SERIAL_PORT) $(BAUD_RATE) rx $(RX_FILE) -lm
 
 .PHONY: run_cable
 run_cable: $(BIN)/cable

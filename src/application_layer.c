@@ -16,7 +16,7 @@
 #define C_END 3
 
 void applicationLayerTransmitter(const char *filename);
-void applicationLayerReceiver();
+void applicationLayerReceiver(const char *filename);
 unsigned char *getControlPacket(unsigned int controlField, const char *filename, long int fileSize, unsigned int *controlPacketSize);
 unsigned char *getDataPacket(unsigned int sequenceNumber, const unsigned char *data, unsigned int dataSize, unsigned int *dataPacketSize);
 
@@ -39,7 +39,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     if (connectionParameters.role == LlTx) {
         applicationLayerTransmitter(filename);
     } else {
-        applicationLayerReceiver();
+        applicationLayerReceiver(filename);
     }
 }
 
@@ -123,7 +123,7 @@ void applicationLayerTransmitter(const char *filename) {
     llclose(TRUE);
 }
 
-void applicationLayerReceiver() {
+void applicationLayerReceiver(const char *filename) {
     unsigned char *packet = (unsigned char*) malloc(MAX_PAYLOAD_SIZE);
     if (packet == NULL) {
         printf("ERROR: Could not allocate memory for packet\n");
@@ -154,13 +154,14 @@ void applicationLayerReceiver() {
     fileName[fileNameLength] = '\0';
     
     // New File received
-    FILE *newFile = fopen((char *)fileName, "wb+");
+    FILE *newFile = fopen(filename, "wb+");
+    /*FILE *newFile = fopen((char *)fileName, "wb+");
     if (newFile == NULL) {
         printf("ERROR: Could not open file for writing\n");
         free(packet);
         free(fileName);
         return;
-    }
+    }*/
 
     unsigned long int totalReceivedDataSize = 0;
     while (TRUE) {
