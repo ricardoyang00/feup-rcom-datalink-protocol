@@ -15,16 +15,13 @@
 #define C_DATA 2
 #define C_END 3
 
-int counter = 1;
-
 void applicationLayerTransmitter(const char *filename);
 void applicationLayerReceiver();
 unsigned char *getControlPacket(unsigned int controlField, const char *filename, long int fileSize, unsigned int *controlPacketSize);
 unsigned char *getDataPacket(unsigned int sequenceNumber, const unsigned char *data, unsigned int dataSize, unsigned int *dataPacketSize);
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
-                      int nTries, int timeout, const char *filename)
-{
+                      int nTries, int timeout, const char *filename) {
     LinkLayer connectionParameters = {
         .baudRate = baudRate,
         .nRetransmissions = nTries,
@@ -47,8 +44,6 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 }
 
 void applicationLayerTransmitter(const char *filename) {
-    printf("TR: Started Transmitting\n");
-
     FILE *file = fopen(filename, "rb");
     if (file == NULL) {
         printf("ERROR: Could not open file\n");
@@ -71,14 +66,12 @@ void applicationLayerTransmitter(const char *filename) {
     // Start Control Packet
     unsigned char *startControlPacket = getControlPacket(C_START, filename, fileSize, &controlPacketSize);
 
-    printf("TR: Sending start control packet\n");
     if (llwrite(startControlPacket, controlPacketSize) == -1) {
         printf("Exit: error in start packet\n");
         free(startControlPacket);
         fclose(file);
         return;
     }
-    printf("TR: Sent start control packet\n");
     
     // Data Packet
     unsigned char *fileData = (unsigned char*) malloc(fileSize);
@@ -92,14 +85,11 @@ void applicationLayerTransmitter(const char *filename) {
 
     unsigned char sequenceNumber = 0;
     long int fileSizeRemaining = fileSize;
-    
-    printf("TR: Started sending data packets...\n");
     while (fileSizeRemaining != 0) {
         unsigned int currentDataSize = fileSizeRemaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : fileSizeRemaining;
         unsigned int dataPacketSize;
         unsigned char *dataPacket = getDataPacket(sequenceNumber, fileData + (fileSize - fileSizeRemaining), currentDataSize, &dataPacketSize);
 
-        printf("TR: Sending data packet #%d\n", counter++);
         if (llwrite(dataPacket, dataPacketSize) == -1) {
             printf("Error in data packet\n");
             free(dataPacket);
@@ -113,12 +103,10 @@ void applicationLayerTransmitter(const char *filename) {
         sequenceNumber = (sequenceNumber + 1) % 100;
         free(dataPacket);
     }
-    printf("TR: Sent all data packets\n");
 
     // End Control Packet
     unsigned char *endControlPacket = getControlPacket(C_END, filename, fileSize, &controlPacketSize);
 
-    printf("TR: Sending End Control Packet\n");
     if (llwrite(endControlPacket, controlPacketSize) == -1) {
         printf("Error in end packet\n");
         free(endControlPacket);
@@ -127,19 +115,15 @@ void applicationLayerTransmitter(const char *filename) {
         fclose(file);
         return;
     }
-    printf("TR: Sent End Control Packet\n");
 
     fclose(file);
     free(startControlPacket);
     free(endControlPacket);
     free(fileData);
-    
     llclose(TRUE);
 }
 
 void applicationLayerReceiver() {
-    printf("RCV: Started Receiving\n");
-
     unsigned char *packet = (unsigned char*) malloc(MAX_PAYLOAD_SIZE);
     if (packet == NULL) {
         printf("ERROR: Could not allocate memory for packet\n");
@@ -149,14 +133,13 @@ void applicationLayerReceiver() {
     // Start Control Packet
     int packetSize = 0;
     while ((packetSize = llread(packet)) < 0);
-    printf("RCV: Received start control packet\n");
 
     // File Size
     unsigned long int receivedFileSize = 0;
     unsigned char fileSizeLength = packet[2];
     for (unsigned int i = 0; i < fileSizeLength; i++) {
         receivedFileSize |= (packet[2 + fileSizeLength - i] << (8 * i));
-    }
+    } // important to verify if the entire file has been transferred correctly
 
     // File Name
     unsigned char fileNameLength = packet[4 + fileSizeLength];
@@ -180,16 +163,11 @@ void applicationLayerReceiver() {
     }
 
     unsigned long int totalReceivedDataSize = 0;
-
-    printf("RCV: Started Receiving data packets...\n");
     while (TRUE) {
         while ((packetSize = llread(packet)) < 0);
         
         if (packetSize == 0) break;
-
-        if (packet[0] == C_DATA){
-            printf("RCV: Received data packet #%d\n", counter++);
-    
+        else if (packet[0] == C_DATA){
             unsigned char *dataBuffer = (unsigned char*) malloc(packetSize - 4);
 
             if (dataBuffer == NULL) {
@@ -199,14 +177,12 @@ void applicationLayerReceiver() {
                 fclose(newFile);
                 return;
             }
-
+            totalReceivedDataSize += (packetSize - 4);
             memcpy(dataBuffer, packet + 4, packetSize - 4);
             fwrite(dataBuffer, sizeof(unsigned char), packetSize - 4, newFile);
-            totalReceivedDataSize += (packetSize - 4);
             free(dataBuffer);
         }
     }
-    printf("RCV: Received all data packets\n");
 
     if (totalReceivedDataSize != receivedFileSize) {
         printf("ERROR: File size mismatch. Expected %lu bytes, but received %lu bytes.\n", receivedFileSize, totalReceivedDataSize);
@@ -217,7 +193,6 @@ void applicationLayerReceiver() {
     fclose(newFile);
     free(packet);
     free(fileName);
-
 }
 
 unsigned char *getControlPacket(unsigned int controlField, const char *filename, long int fileSize, unsigned int *controlPacketSize) {
