@@ -48,6 +48,7 @@ int llopen(LinkLayer connectionParameters) {
 
                 alarm(connectionParameters.timeout);
                 alarmEnabled = TRUE;
+                printf("Attempt #%d\n", alarmCount + 1);
                 
                 while (state != STOP_STATE && alarmEnabled) {
                     if (readByteSerialPort(&byte) <= 0) continue;
@@ -86,6 +87,8 @@ int llopen(LinkLayer connectionParameters) {
 
                 if (state == STOP_STATE) break;
             }
+
+            if (state != STOP_STATE) return -1;
 
             break; 
 
@@ -187,6 +190,7 @@ int llwrite(const unsigned char *buf, int bufSize) {
 
         alarm(timeout);
         alarmEnabled = TRUE;
+        printf("Attempt #%d\n", alarmCount + 1);
     
         while (alarmEnabled && !isAccepted && !isRejected) {
             writeBytesSerialPort(frame, ++currentFrameIndex);
@@ -242,7 +246,6 @@ int llwrite(const unsigned char *buf, int bufSize) {
         }
 
         if (isAccepted) break;
-
     }
 
     free(frame);
@@ -350,6 +353,7 @@ int llclose(int showStatistics) {
 
         alarm(timeout);
         alarmEnabled = TRUE;
+        printf("Attempt #%d\n", alarmCount + 1);
         
         while (state != STOP_STATE && alarmEnabled) {
             if (readByteSerialPort(&byte) <= 0) continue;
@@ -407,7 +411,7 @@ void nextTramaRx() {
 }
 
 void alarmHandler(int signal) {
-    printf("Alarm #%d\n", alarmCount + 1);
+    //printf("Alarm #%d\n", alarmCount + 1);
     
     alarmEnabled = FALSE;
     alarmCount++;
