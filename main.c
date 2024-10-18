@@ -67,5 +67,7 @@ int main(int argc, char *argv[])
 
     applicationLayer(serialPort, role, baudrate, N_TRIES, TIMEOUT, filename);
 
+    printf("Application finished\n");
+
     return 0;
 }

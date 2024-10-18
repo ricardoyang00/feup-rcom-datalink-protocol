@@ -200,7 +200,7 @@ int llwrite(const unsigned char *buf, int bufSize)
 
         alarm(timeout);
         alarmEnabled = TRUE;
-
+    
         while (alarmEnabled && !isAccepted && !isRejected) {
             writeBytesSerialPort(frame, ++currentFrameIndex);
             
@@ -226,10 +226,12 @@ int llwrite(const unsigned char *buf, int bufSize)
 
                             if (byte == C_RR(0) || byte == C_RR(1)) {
                                 isAccepted = TRUE;
+                                //printf("isAccepted = %d\n", isAccepted);
                                 //printf("TR: Buffer accepted, tramaTx #%d\n", tramaTx);
                                 nextTramaTx();
                             } else {
                                 isRejected = TRUE;
+                                //printf("isRejected = %d\n", isRejected);
                                 //printf("TR: Buffer rejected\n");
                             }
                         }
@@ -250,16 +252,19 @@ int llwrite(const unsigned char *buf, int bufSize)
                 }
             }
         }
+
+        if (isAccepted || isRejected) break;
     }
 
     free(frame);
 
-    //if (closeSerialPort() == -1) return -1;
     if (isAccepted) {
         //printf("TR: Received RR buffer Sucessfully\n");
         return frameSize;
+    } else {
+        llclose(TRUE);
+        return -1;
     }
-    return -1;
 }
 
 ////////////////////////////////////////////////
@@ -352,7 +357,7 @@ int llclose(int showStatistics) {
 
     (void) signal(SIGALRM, alarmHandler);
 
-    while (state != STOP_STATE && retransmissions != 0) {
+    while (state != STOP_STATE && retransmissions > 0) {
 
         sendSVF(A_T, C_DISC);
         alarm(timeout);
@@ -390,7 +395,7 @@ int llclose(int showStatistics) {
     }
 
     sendSVF(A_T, C_UA);
-    
+    printf("serial port closed\n");
     return closeSerialPort();
 }
 

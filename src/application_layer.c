@@ -11,9 +11,16 @@
 #include <unistd.h>
 #include <math.h>
 
+#define C_START 1
+#define C_DATA 2
+#define C_END 3
+
+int counter = 1;
+
+void applicationLayerTransmitter(const char *filename);
+void applicationLayerReceiver();
 unsigned char *getControlPacket(unsigned int controlField, const char *filename, long int fileSize, unsigned int *controlPacketSize);
 unsigned char *getDataPacket(unsigned int sequenceNumber, const unsigned char *data, unsigned int dataSize, unsigned int *dataPacketSize);
-void parseDataPacket(const unsigned char *packet, int packetSize, unsigned char *buffer);
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
                       int nTries, int timeout, const char *filename)
@@ -33,186 +40,184 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     }
 
     if (connectionParameters.role == LlTx) {
-        // Transmitter role
+        applicationLayerTransmitter(filename);
+    } else {
+        applicationLayerReceiver();
+    }
+}
 
-        printf("TR: Started Transmitting\n");
+void applicationLayerTransmitter(const char *filename) {
+    printf("TR: Started Transmitting\n");
 
-        // Open the file specified in filename in binary read mode
-        FILE *file = fopen(filename, "rb");
-        if (file == NULL) {
-            printf("ERROR: Could not open file\n");
-            return;
-        }
+    FILE *file = fopen(filename, "rb");
+    if (file == NULL) {
+        printf("ERROR: Could not open file\n");
+        return;
+    }
 
-        // Save the current position of the file pointer
-        long initialFilePosition = ftell(file);
+    // current position of the file pointer
+    long int initialFilePosition = ftell(file);
 
-        // Move the file pointer to the end of the file
-        fseek(file, 0L, SEEK_END);
+    // move the file pointer to the end of the file
+    fseek(file, 0L, SEEK_END);
+    
+    long int fileSize = ftell(file) - initialFilePosition;
 
-        // Calculate the size of the file in bytes
-        long fileSize = ftell(file) - initialFilePosition;
+    // move the file pointer back to its original position
+    fseek(file, initialFilePosition, SEEK_SET);
 
-        // Move the file pointer back to its original position
-        fseek(file, initialFilePosition, SEEK_SET);
+    unsigned int controlPacketSize;
 
-        // Define a variable to store the size of the control packet
-        unsigned int controlPacketSize;
+    // Start Control Packet
+    unsigned char *startControlPacket = getControlPacket(C_START, filename, fileSize, &controlPacketSize);
 
-        // Generate the control packet for the start of the transmission
-        unsigned char *startControlPacket = getControlPacket(1, filename, fileSize, &controlPacketSize);
+    printf("TR: Sending start control packet\n");
+    if (llwrite(startControlPacket, controlPacketSize) == -1) {
+        printf("Exit: error in start packet\n");
+        free(startControlPacket);
+        fclose(file);
+        return;
+    }
+    printf("TR: Sent start control packet\n");
+    
+    // Data Packet
+    unsigned char *fileData = (unsigned char*) malloc(fileSize);
+    if (fileData == NULL) {
+        printf("ERROR: Could not allocate memory for file data\n");
+        free(startControlPacket);
+        fclose(file);
+        return;
+    }
+    fread(fileData, sizeof(unsigned char), fileSize, file);
 
-        // Send the start control packet
-        printf("TR: Sending start control packet\n");
-        if (llwrite(startControlPacket, controlPacketSize) == -1) {
-            printf("Exit: error in start packet\n");
-            free(startControlPacket);
-            fclose(file);
+    unsigned char sequenceNumber = 0;
+    long int fileSizeRemaining = fileSize;
+    
+    printf("TR: Started sending data packets...\n");
+    while (fileSizeRemaining != 0) {
+        unsigned int currentDataSize = fileSizeRemaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : fileSizeRemaining;
+        unsigned int dataPacketSize;
+        unsigned char *dataPacket = getDataPacket(sequenceNumber, fileData + (fileSize - fileSizeRemaining), currentDataSize, &dataPacketSize);
 
-            return;
-        }
-        printf("TR: Sent start control packet\n");
-        
-        // Allocate memory to read the entire file into a buffer
-        unsigned char *fileData = malloc(fileSize);
-        if (fileData == NULL) {
-            printf("ERROR: Could not allocate memory for file data\n");
-            free(startControlPacket);
-            fclose(file);
-            return;
-        }
-        fread(fileData, sizeof(unsigned char), fileSize, file);
-
-        // Initialize the sequence number
-        unsigned char sequenceNumber = 0;
-
-        // Transmit the file in chunks
-        long fileSizeRemaining = fileSize;
-        while (fileSizeRemaining > 0) {
-            // Determine the size of the current data chunk
-            unsigned int currentDataSize = fileSizeRemaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : fileSizeRemaining;
-
-            // Generate the data packet
-            unsigned int dataPacketSize;
-            unsigned char *dataPacket = getDataPacket(sequenceNumber, fileData + (fileSize - fileSizeRemaining), currentDataSize, &dataPacketSize);
-
-            // Send the data packet
-            printf("TR: Sending data packet #%d\n", sequenceNumber);
-            if (llwrite(dataPacket, dataPacketSize) == -1) {
-                printf("Error in data packet\n");
-                free(dataPacket);
-                free(fileData);
-                free(startControlPacket);
-                fclose(file);
-                return;
-            }
-
-            // Update the remaining file size and sequence number
-            fileSizeRemaining -= currentDataSize;
-            sequenceNumber = (sequenceNumber + 1) % 100;
-
-            // Free the allocated memory for the data packet
+        printf("TR: Sending data packet #%d\n", counter++);
+        if (llwrite(dataPacket, dataPacketSize) == -1) {
+            printf("Error in data packet\n");
             free(dataPacket);
-        }
-
-        // Generate the control packet for the end of the transmission
-        unsigned char *endControlPacket = getControlPacket(3, filename, fileSize, &controlPacketSize);
-
-        // Send the end control packet
-        printf("TR: Finished Transmitting\n");
-        if (llwrite(endControlPacket, controlPacketSize) == -1) {
-            printf("Error in end packet\n");
-            free(endControlPacket);
             free(fileData);
             free(startControlPacket);
             fclose(file);
             return;
         }
 
-        // Close the file and the connection
-        fclose(file);
+        fileSizeRemaining -= currentDataSize;
+        sequenceNumber = (sequenceNumber + 1) % 100;
+        free(dataPacket);
+    }
+    printf("TR: Sent all data packets\n");
 
-        // Free the allocated memory for the control packets and file data
-        free(startControlPacket);
+    // End Control Packet
+    unsigned char *endControlPacket = getControlPacket(C_END, filename, fileSize, &controlPacketSize);
+
+    printf("TR: Sending End Control Packet\n");
+    if (llwrite(endControlPacket, controlPacketSize) == -1) {
+        printf("Error in end packet\n");
         free(endControlPacket);
         free(fileData);
-    } else {
-        // Receiver role
+        free(startControlPacket);
+        fclose(file);
+        return;
+    }
+    printf("TR: Sent End Control Packet\n");
 
-        printf("RCV: Started Receiving\n");
+    fclose(file);
+    free(startControlPacket);
+    free(endControlPacket);
+    free(fileData);
+    
+    llclose(TRUE);
+}
 
-        // Allocate memory for the packet
-        unsigned char *packet = malloc(MAX_PAYLOAD_SIZE);
-        if (packet == NULL) {
-            printf("ERROR: Could not allocate memory for packet\n");
-            return;
-        }
+void applicationLayerReceiver() {
+    printf("RCV: Started Receiving\n");
 
-        // Read the start control packet
-        int packetSize = -1;
-        while ((packetSize = llread(packet)) < 0);
-        printf("RCV: Received start control packet\n");
-
-        // Extract the file size from the start control packet
-        unsigned long int receivedFileSize = 0;
-        unsigned char fileSizeLength = packet[2];
-        for (unsigned int i = 0; i < fileSizeLength; i++) {
-            receivedFileSize |= (packet[3 + fileSizeLength - 1 - i] << (8 * i));
-        }
-
-        // Extract the file name from the start control packet
-        unsigned char fileNameLength = packet[3 + fileSizeLength + 1];
-        unsigned char *fileName = (unsigned char *)malloc(fileNameLength + 1);
-        if (fileName == NULL) {
-            printf("ERROR: Could not allocate memory for file name\n");
-            free(packet);
-            return;
-        }
-
-        memcpy(fileName, packet + 3 + fileSizeLength + 2, fileNameLength);
-        fileName[fileNameLength] = '\0';
-
-        // Open the new file for writing
-        FILE *newFile = fopen((char *)fileName, "wb+");
-        if (newFile == NULL) {
-            printf("ERROR: Could not open file for writing\n");
-            free(packet);
-            free(fileName);
-            return;
-        }
-
-        // Read and write data packets
-        printf("RCV: Started Receiving data packets...\n");
-        while (TRUE) {
-            while ((packetSize = llread(packet)) < 0);
-            //printf("RCV: Received data packet #%d\n", packet[1]);
-            
-            if (packetSize == 0) {
-                printf("RCV: End of transmission\n");
-                break;
-            }
-            if (packet[0] != 3) {
-                unsigned char *dataBuffer = malloc(packetSize - 4);
-                if (dataBuffer == NULL) {
-                    printf("ERROR: Could not allocate memory for data buffer\n");
-                    free(packet);
-                    free(fileName);
-                    fclose(newFile);
-                    return;
-                }
-                parseDataPacket(packet, packetSize, dataBuffer);
-                fwrite(dataBuffer, sizeof(unsigned char), packetSize - 4, newFile);
-                free(dataBuffer);
-            }
-        }
-
-        // Close the file and free allocated memory
-        fclose(newFile);
-        free(packet);
-        free(fileName);
+    unsigned char *packet = (unsigned char*) malloc(MAX_PAYLOAD_SIZE);
+    if (packet == NULL) {
+        printf("ERROR: Could not allocate memory for packet\n");
+        return;
     }
 
-    llclose(TRUE);
+    // Start Control Packet
+    int packetSize = 0;
+    while ((packetSize = llread(packet)) < 0);
+    printf("RCV: Received start control packet\n");
+
+    // File Size
+    unsigned long int receivedFileSize = 0;
+    unsigned char fileSizeLength = packet[2];
+    for (unsigned int i = 0; i < fileSizeLength; i++) {
+        receivedFileSize |= (packet[2 + fileSizeLength - i] << (8 * i));
+    }
+
+    // File Name
+    unsigned char fileNameLength = packet[4 + fileSizeLength];
+    unsigned char *fileName = (unsigned char *) malloc(fileNameLength + 1);
+    if (fileName == NULL) {
+        printf("ERROR: Could not allocate memory for file name\n");
+        free(packet);
+        return;
+    }
+
+    memcpy(fileName, packet + fileSizeLength + 5, fileNameLength);
+    fileName[fileNameLength] = '\0';
+    
+    // New File received
+    FILE *newFile = fopen((char *)fileName, "wb+");
+    if (newFile == NULL) {
+        printf("ERROR: Could not open file for writing\n");
+        free(packet);
+        free(fileName);
+        return;
+    }
+
+    unsigned long int totalReceivedDataSize = 0;
+
+    printf("RCV: Started Receiving data packets...\n");
+    while (TRUE) {
+        while ((packetSize = llread(packet)) < 0);
+        
+        if (packetSize == 0) break;
+
+        if (packet[0] == C_DATA){
+            printf("RCV: Received data packet #%d\n", counter++);
+    
+            unsigned char *dataBuffer = (unsigned char*) malloc(packetSize - 4);
+
+            if (dataBuffer == NULL) {
+                printf("ERROR: Could not allocate memory for data buffer\n");
+                free(packet);
+                free(fileName);
+                fclose(newFile);
+                return;
+            }
+
+            memcpy(dataBuffer, packet + 4, packetSize - 4);
+            fwrite(dataBuffer, sizeof(unsigned char), packetSize - 4, newFile);
+            totalReceivedDataSize += (packetSize - 4);
+            free(dataBuffer);
+        }
+    }
+    printf("RCV: Received all data packets\n");
+
+    if (totalReceivedDataSize != receivedFileSize) {
+        printf("ERROR: File size mismatch. Expected %lu bytes, but received %lu bytes.\n", receivedFileSize, totalReceivedDataSize);
+    } else {
+        printf("File received successfully. Total size: %lu bytes.\n", totalReceivedDataSize);
+    }
+
+    fclose(newFile);
+    free(packet);
+    free(fileName);
+
 }
 
 unsigned char *getControlPacket(unsigned int controlField, const char *filename, long int fileSize, unsigned int *controlPacketSize) {
@@ -248,31 +253,18 @@ unsigned char *getControlPacket(unsigned int controlField, const char *filename,
 }
 
 unsigned char *getDataPacket(unsigned int sequenceNumber, const unsigned char *data, unsigned int dataSize, unsigned int *dataPacketSize) {
-    // Calculate the total size of the data packet
-    *dataPacketSize = 1 + 1 + 2 + dataSize;
+    *dataPacketSize = 4 + dataSize;
 
-    // Allocate memory for the data packet
     unsigned char *packet = (unsigned char*) malloc(*dataPacketSize);
 
-    // Initialize the position index for the packet
     unsigned int pos = 0;
 
-    // Set the control field (value: 2 for data)
-    packet[pos++] = 2;
+    packet[pos++] = C_DATA;
+    packet[pos++] = sequenceNumber % 100;
+    packet[pos++] = (dataSize >> 8) & 0xFF;
+    packet[pos++] = dataSize & 0xFF;
 
-    // Set the sequence number
-    packet[pos++] = sequenceNumber % 100; // Ensure the sequence number is between 0 and 99
-
-    // Set the size of the data field (L2 L1)
-    packet[pos++] = (dataSize >> 8) & 0xFF; // L2
-    packet[pos++] = dataSize & 0xFF; // L1
-
-    // Copy the data into the packet
     memcpy(packet + pos, data, dataSize);
 
     return packet;
-}
-
-void parseDataPacket(const unsigned char *packet, int packetSize, unsigned char *buffer) {
-    memcpy(buffer, packet + 4, packetSize - 4);
 }
