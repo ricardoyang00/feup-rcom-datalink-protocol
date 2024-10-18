@@ -151,12 +151,12 @@ int llopen(LinkLayer connectionParameters) {
 // LLWRITE
 ////////////////////////////////////////////////
 int llwrite(const unsigned char *buf, int bufSize)
-{
+{   
     int frameSize = bufSize + 6;
     unsigned char *frame = malloc(frameSize);
     frame[0] = FLAG;
     frame[1] = A_T;
-    frame[2] = Ns(tramaRx);
+    frame[2] = C_N(tramaRx);
     frame[3] = frame[1] ^ frame[2];
 
     memcpy(frame + 4, buf, bufSize);
@@ -226,8 +226,12 @@ int llwrite(const unsigned char *buf, int bufSize)
 
                             if (byte == C_RR(0) || byte == C_RR(1)) {
                                 isAccepted = TRUE;
+                                //printf("TR: Buffer accepted, tramaTx #%d\n", tramaTx);
                                 nextTramaTx();
-                            } else isRejected = TRUE;
+                            } else {
+                                isRejected = TRUE;
+                                //printf("TR: Buffer rejected\n");
+                            }
                         }
                         else if (byte == FLAG) state = FLAG_RCV;
                         else state = START_STATE;
@@ -246,16 +250,15 @@ int llwrite(const unsigned char *buf, int bufSize)
                 }
             }
         }
-
-        if (isAccepted) break;
-        
     }
 
     free(frame);
 
     //if (closeSerialPort() == -1) return -1;
-    if (isAccepted) return frameSize;
-        
+    if (isAccepted) {
+        //printf("TR: Received RR buffer Sucessfully\n");
+        return frameSize;
+    }
     return -1;
 }
 
@@ -275,7 +278,7 @@ int llread(unsigned char *packet)
     while (state != STOP_STATE) {
         if (readByteSerialPort(&byte) <= 0) continue;
 
-        switch state {
+        switch (state) {
             case START_STATE:
                 if (byte == FLAG) state = FLAG_RCV;
                 break;
@@ -315,6 +318,7 @@ int llread(unsigned char *packet)
                     if (xor == BCC2) {
                         sendSVF(A_R, C_RR(tramaRx));
                         nextTramaRx();
+                        //printf("RCV: Received buffer Sucessfully\n");
                         return currentFrameIndex;
                     } else {
                         printf("RCV Error: BCC2 does not match\n");
@@ -352,7 +356,7 @@ int llclose(int showStatistics) {
 
         sendSVF(A_T, C_DISC);
         alarm(timeout);
-        alarmEnabled = true;
+        alarmEnabled = TRUE;
         
         while (state != STOP_STATE && alarmEnabled) {
             if (readByteSerialPort(&byte) <= 0) continue;
