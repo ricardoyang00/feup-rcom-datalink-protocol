@@ -83,10 +83,7 @@ int llopen(LinkLayer connectionParameters) {
                     }
                 }
 
-                if (state == STOP_STATE) {
-                    printf("TR: Received UA Buffer Sucessfully\n");
-                    break;
-                }
+                if (state == STOP_STATE) break;
             }
 
             break; 
