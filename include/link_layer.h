@@ -27,6 +27,8 @@
 #define FALSE 0
 #define TRUE 1
 
+#define MICROSECONDS_IN_SECOND 1000000
+
 typedef enum
 {
     LlTx,
@@ -53,6 +55,16 @@ typedef struct
     int timeout;
 } LinkLayer;
 
+typedef struct
+{
+    int errors;
+    int framesSent;
+    int framesReceived;
+    double propagationDelay;
+} LinkLayerStatistics;
+
+extern LinkLayerStatistics statistics;
+
 // Open a connection using the "port" parameters defined in struct linkLayer.
 // Return "1" on success or "-1" on error.
 int llopen(LinkLayer connectionParameters);
@@ -75,5 +87,15 @@ int sendSVF(unsigned char A, unsigned char C);
 void nextTramaTx();
 
 void nextTramaRx();
+
+void simulatePropagationDelay(double delay);
+
+void incrementErrors();
+
+void incrementFramesSent();
+
+void incrementFramesReceived();
+
+void addPropagationDelay(double delay);
 
 #endif // _LINK_LAYER_H_

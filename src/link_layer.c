@@ -12,6 +12,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <signal.h>
+#include <time.h>
 
 // MISC
 #define _POSIX_SOURCE 1 // POSIX compliant source
@@ -25,6 +26,13 @@ int timeout = 0;
 
 int tramaRx = 0;
 int tramaTx = 0;
+
+LinkLayerStatistics statistics = {
+    .errors = 0,
+    .framesSent = 0,
+    .framesReceived = 0,
+    .propagationDelay = 0.0
+};
 
 ////////////////////////////////////////////////
 // LLOPEN
@@ -88,7 +96,10 @@ int llopen(LinkLayer connectionParameters) {
                 if (state == STOP_STATE) break;
             }
 
-            if (state != STOP_STATE) return -1;
+            if (state != STOP_STATE) {
+                printf("Tries exceeded\n");
+                return -1;
+            }
 
             break; 
 
@@ -184,21 +195,26 @@ int llwrite(const unsigned char *buf, int bufSize) {
 
     alarmEnabled = FALSE;
 
+    LinkLayerState state = START_STATE;
+
     while (alarmCount < retransmissions) {
         isAccepted = FALSE;
         isRejected = FALSE;
 
         alarm(timeout);
         alarmEnabled = TRUE;
+
+        clock_t start, end;
     
         while (alarmEnabled && !isAccepted && !isRejected) {
             writeBytesSerialPort(frame, ++currentFrameIndex);
             
             unsigned char byte_C = 0;
             unsigned char byte;
-            LinkLayerState state = START_STATE;
 
             while (state != STOP_STATE) {
+                start = clock();
+
                 if (readByteSerialPort(&byte) <= 0) continue;
                 
                 switch (state) {
@@ -221,6 +237,7 @@ int llwrite(const unsigned char *buf, int bufSize) {
                                 nextTramaTx();
                             } else {
                                 isRejected = TRUE;
+                                incrementErrors();
                             }
                         }
                         else if (byte == FLAG) state = FLAG_RCV;
@@ -242,16 +259,24 @@ int llwrite(const unsigned char *buf, int bufSize) {
                         break;
                 }
             }
-        }
 
+            end = clock();
+            double delay = (double) (end - start) / CLOCKS_PER_SEC;
+            addPropagationDelay(delay);
+        }
+        
         if (isAccepted) break;
+    }
+
+    if (state != STOP_STATE) {
+        printf("Tries exceeded\n");
     }
 
     free(frame);
 
     if (isAccepted) return frameSize;
     
-    llclose(TRUE);
+    llclose(FALSE);
     return -1;
 }
 
@@ -349,13 +374,18 @@ int llclose(int showStatistics) {
 
     alarmCount = 0;
 
-    while (retransmissions > 0) {
+    while (alarmCount < retransmissions) {
         if (sendSVF(A_T, C_DISC) < 0) return -1;
+        incrementFramesSent();
 
         alarm(timeout);
         alarmEnabled = TRUE;
+
+        clock_t start, end;
         
         while (state != STOP_STATE && alarmEnabled) {
+            start = clock();
+
             if (readByteSerialPort(&byte) <= 0) continue;
         
             switch (state) {
@@ -388,12 +418,53 @@ int llclose(int showStatistics) {
                 default:
                     break;
             }
+
+            end = clock();
+            double delay = (double) (end - start) / CLOCKS_PER_SEC;
+            addPropagationDelay(delay);
         }
 
-        if (state == STOP_STATE) break;
+        if (state == STOP_STATE) {
+            incrementFramesReceived();
+            break;
+        } else incrementErrors();
     }
-
+    
     if (sendSVF(A_T, C_UA) < 0) return -1;
+    incrementFramesSent();
+
+    if (showStatistics) {
+        double FER = -1, T_prop = -1, C = -1, received_bitrate = -1, efficiency = -1;
+        double I_frame_size = (double) MAX_PAYLOAD_SIZE;
+
+        if (statistics.framesSent > 0) FER = (double) statistics.errors / (double) statistics.framesSent;
+        if (statistics.framesSent > 0) T_prop = statistics.propagationDelay / (double) statistics.framesSent;
+        if (statistics.propagationDelay > 0) C = (double) statistics.framesSent / (double) (statistics.propagationDelay / MICROSECONDS_IN_SECOND); 
+        if (statistics.propagationDelay > 0) received_bitrate = (double) (MAX_PAYLOAD_SIZE * 8) / (double) (statistics.propagationDelay / MICROSECONDS_IN_SECOND);
+
+        if ((MAX_PAYLOAD_SIZE * 8 + 32) > 0) efficiency = (double) (MAX_PAYLOAD_SIZE * 8) / (double) (MAX_PAYLOAD_SIZE * 8 + 32);
+
+        printf( "\nFinal Statistics\n"
+                "   - Frames Sent: %d\n"
+                "   - Frames Received: %d\n"
+                "   - Errors: %d\n"
+                "   - FER: %.2f\n"
+                "   - Propagation Delay (T_prop): %.2f microseconds\n"
+                "   - Link capacity (C): %.2f bits/second\n"
+                "   - Size of I frame: %.2f bits\n"
+                "   - Received bitrate: %.2f bits/second\n"
+                "   - Efficiency: %.2f\n",
+                statistics.framesSent,
+                statistics.framesReceived,
+                statistics.errors,
+                FER, 
+                T_prop, 
+                C, 
+                I_frame_size, 
+                received_bitrate, 
+                efficiency
+        );
+    }
 
     return closeSerialPort();
 }
@@ -413,8 +484,24 @@ void nextTramaRx() {
 }
 
 void alarmHandler(int signal) {
-    //printf("Alarm #%d\n", alarmCount + 1);
+    printf("Alarm #%d\n", alarmCount + 1);
 
     alarmEnabled = FALSE;
     alarmCount++;
+}
+
+void incrementErrors() {
+    statistics.errors++;
+}
+
+void incrementFramesSent() {
+    statistics.framesSent++;
+}
+
+void incrementFramesReceived() {
+    statistics.framesReceived++;
+}
+
+void addPropagationDelay(double delay) {
+    statistics.propagationDelay += delay * MICROSECONDS_IN_SECOND;
 }
