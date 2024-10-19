@@ -72,6 +72,7 @@ void applicationLayerTransmitter(const char *filename) {
         fclose(file);
         return;
     }
+    printf("TR: Start packet sent\n");
     
     // Data Packet
     unsigned char *fileData = (unsigned char*) malloc(fileSize);
@@ -103,6 +104,7 @@ void applicationLayerTransmitter(const char *filename) {
         sequenceNumber = (sequenceNumber + 1) % 100;
         free(dataPacket);
     }
+    printf("TR: Data packets sent\n");
 
     // End Control Packet
     unsigned char *endControlPacket = getControlPacket(C_END, filename, fileSize, &controlPacketSize);
@@ -115,6 +117,7 @@ void applicationLayerTransmitter(const char *filename) {
         fclose(file);
         return;
     }
+    printf("TR: End packet sent\n");
 
     fclose(file);
     free(startControlPacket);
@@ -133,6 +136,11 @@ void applicationLayerReceiver(const char *filename) {
     // Start Control Packet
     int packetSize = 0;
     while ((packetSize = llread(packet)) < 0);
+    if (packet[0] != C_START) {
+        printf("ERROR: Expected start control packet, but received something else\n");
+        free(packet);
+        return;
+    }
 
     // File Size
     unsigned long int receivedFileSize = 0;
@@ -163,6 +171,8 @@ void applicationLayerReceiver(const char *filename) {
         return;
     }*/
 
+    printf("RCV: Receiving file %s...\n", filename);
+
     unsigned long int totalReceivedDataSize = 0;
     while (TRUE) {
         while ((packetSize = llread(packet)) < 0);
@@ -188,7 +198,7 @@ void applicationLayerReceiver(const char *filename) {
     if (totalReceivedDataSize != receivedFileSize) {
         printf("ERROR: File size mismatch. Expected %lu bytes, but received %lu bytes.\n", receivedFileSize, totalReceivedDataSize);
     } else {
-        printf("File received successfully. Total size: %lu bytes.\n", totalReceivedDataSize);
+        printf("\nFile received successfully. Total size: %lu bytes.\n", totalReceivedDataSize);
     }
 
     fclose(newFile);
