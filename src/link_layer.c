@@ -342,7 +342,8 @@ int llread(unsigned char *packet) {
                     } else {
                         if (sendSVF(A_R, C_REJ(tramaRx)) < 0) return -1;
                         printf("RCV Error: BCC2 does not match\n");
-                        return -1;
+                        state = START_STATE;
+                        break;
                     }
                 }
                 else packet[currentFrameIndex++] = byte;
