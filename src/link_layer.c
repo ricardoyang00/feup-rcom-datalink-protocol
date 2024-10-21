@@ -19,13 +19,12 @@
 
 void alarmHandler(int signal);
 
+int tramaRx = 0;
+int tramaTx = 1;
 int alarmEnabled = FALSE;
 int alarmCount = 0;
 int retransmissions = 0;
 int timeout = 0;
-
-int tramaRx = 0;
-int tramaTx = 1;
 
 LinkLayerStatistics statistics = {
     .errors = 0,
@@ -43,8 +42,8 @@ int llopen(LinkLayer connectionParameters) {
     LinkLayerState state = START_STATE;
     unsigned char byte;
 
-    timeout = connectionParameters.timeout;
     retransmissions = connectionParameters.nRetransmissions;
+    timeout = connectionParameters.timeout;
 
     switch (connectionParameters.role) {
         case LlTx: 
@@ -149,6 +148,9 @@ int llopen(LinkLayer connectionParameters) {
             printf("RCV: Sent UA Frame\n");
 
             break;
+
+        default:
+            return -1;
     }
 
     return 1;
@@ -163,7 +165,7 @@ int llwrite(const unsigned char *buf, int bufSize) {
 
     frame[0] = FLAG;
     frame[1] = A_T;
-    frame[2] = C_N(tramaRx);
+    frame[2] = C_N(tramaTx);
     frame[3] = frame[1] ^ frame[2];
 
     memcpy(frame + 4, buf, bufSize);
@@ -195,15 +197,13 @@ int llwrite(const unsigned char *buf, int bufSize) {
     }
 
     frame[currentFrameIndex++] = BCC2;
-    frame[currentFrameIndex] = FLAG;
+    frame[currentFrameIndex++] = FLAG;
 
     int isAccepted = FALSE, isRejected = FALSE;
     int alarmCount = 0;
     (void) signal(SIGALRM, alarmHandler);
 
     alarmEnabled = FALSE;
-
-    LinkLayerState state = START_STATE;
 
     while (alarmCount < retransmissions) {
         isAccepted = FALSE;
@@ -215,10 +215,12 @@ int llwrite(const unsigned char *buf, int bufSize) {
         clock_t start, end;
     
         while (alarmEnabled && !isAccepted && !isRejected) {
-            writeBytesSerialPort(frame, ++currentFrameIndex);
+            writeBytesSerialPort(frame, currentFrameIndex);
             
             unsigned char byte_C = 0;
             unsigned char byte;
+
+            LinkLayerState state = START_STATE;
 
             while (state != STOP_STATE) {
                 start = clock();
@@ -236,7 +238,7 @@ int llwrite(const unsigned char *buf, int bufSize) {
                         break;
 
                     case A_RCV:
-                        if (byte == C_RR(0) || byte == C_RR(1) || byte == C_REJ(0) || byte == C_REJ(1)) {
+                        if (byte == C_DISC || byte == C_RR(0) || byte == C_RR(1) || byte == C_REJ(0) || byte == C_REJ(1)) {
                             state = C_RCV;
                             byte_C = byte;
 
@@ -335,7 +337,7 @@ int llread(unsigned char *packet) {
                 if (byte == ESC) state = ESC_STATE;
                 else if (byte == FLAG) {
                     unsigned char BCC2 = packet[currentFrameIndex - 1];
-                    currentFrameIndex--;
+                    currentFrameIndex -= 1;
                     packet[currentFrameIndex] = '\0';
                     
                     unsigned char xor = packet[0];
@@ -346,12 +348,14 @@ int llread(unsigned char *packet) {
                     if (xor == BCC2) {
                         if (sendSVF(A_R, C_RR(tramaRx)) < 0) return -1;
                         nextTramaRx();
+                        state = STOP_STATE;
                         return currentFrameIndex;
                     } else {
                         if (sendSVF(A_R, C_REJ(tramaRx)) < 0) return -1;
                         printf("RCV Error: BCC2 does not match\n");
-                        state = START_STATE;
-                        break;
+                        //state = START_STATE;
+                        //break;
+                        return -1;
                     }
                 }
                 else packet[currentFrameIndex++] = byte;
@@ -437,6 +441,11 @@ int llclose(int showStatistics) {
             incrementFramesReceived();
             break;
         } else incrementErrors();
+    }
+
+    if (state != STOP_STATE) {
+        printf("Tries exceeded\n");
+        return -1;
     }
     
     if (sendSVF(A_T, C_UA) < 0) return -1;
