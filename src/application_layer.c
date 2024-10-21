@@ -207,7 +207,7 @@ void applicationLayerReceiver(const char *filename) {
 }
 
 unsigned char *getControlPacket(unsigned int controlField, const char *filename, long int fileSize, unsigned int *controlPacketSize) {
-    int fileSizeBytes = (int) ceil(log2f((float)fileSize) / 8.0);
+    int fileSizeBytes = sizeof(fileSize);
     int filenameLength = strlen(filename);
     *controlPacketSize = 5 + fileSizeBytes + filenameLength;
 
