@@ -50,16 +50,10 @@ void applicationLayerTransmitter(const char *filename) {
         return;
     }
 
-    // current position of the file pointer
-    long int initialFilePosition = ftell(file);
-
-    // move the file pointer to the end of the file
+    // Move to the end of the file and get file size
     fseek(file, 0L, SEEK_END);
-    
-    long int fileSize = ftell(file) - initialFilePosition;
-
-    // move the file pointer back to its original position
-    fseek(file, initialFilePosition, SEEK_SET);
+    long int fileSize = ftell(file);
+    fseek(file, 0L, SEEK_SET); // Move back to the start of the file
 
     unsigned int controlPacketSize;
 

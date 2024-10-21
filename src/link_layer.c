@@ -200,14 +200,13 @@ int llwrite(const unsigned char *buf, int bufSize) {
     frame[currentFrameIndex++] = FLAG;
 
     int isAccepted = FALSE, isRejected = FALSE;
-    int alarmCount = 0;
-    (void) signal(SIGALRM, alarmHandler);
+    int tries = 0;
 
     alarmEnabled = FALSE;
 
     LinkLayerState state = START_STATE;
 
-    while (alarmCount < retransmissions) {
+    while (tries < retransmissions) {
         isAccepted = FALSE;
         isRejected = FALSE;
 
@@ -278,6 +277,7 @@ int llwrite(const unsigned char *buf, int bufSize) {
         }
         
         if (isAccepted) break;
+        tries++;
     }
 
     if (state != STOP_STATE) {
@@ -385,11 +385,13 @@ int llclose(int showStatistics) {
     unsigned char byte;
     LinkLayerState state = START_STATE;
 
+    printf("llclose called\n");
+
     (void) signal(SIGALRM, alarmHandler);
 
     alarmCount = 0;
 
-    while (alarmCount < retransmissions) {
+    while (retransmissions != 0) {
         if (sendSVF(A_T, C_DISC) < 0) return -1;
         incrementFramesSent();
 
@@ -438,6 +440,8 @@ int llclose(int showStatistics) {
             double delay = (double) (end - start) / CLOCKS_PER_SEC;
             addPropagationDelay(delay);
         }
+
+        retransmissions--;
 
         if (state == STOP_STATE) {
             incrementFramesReceived();
