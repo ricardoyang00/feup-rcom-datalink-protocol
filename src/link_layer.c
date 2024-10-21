@@ -25,7 +25,7 @@ int retransmissions = 0;
 int timeout = 0;
 
 int tramaRx = 0;
-int tramaTx = 0;
+int tramaTx = 1;
 
 LinkLayerStatistics statistics = {
     .errors = 0,
