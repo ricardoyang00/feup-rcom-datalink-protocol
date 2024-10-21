@@ -205,6 +205,8 @@ int llwrite(const unsigned char *buf, int bufSize) {
 
     alarmEnabled = FALSE;
 
+    LinkLayerState state = START_STATE;
+
     while (alarmCount < retransmissions) {
         isAccepted = FALSE;
         isRejected = FALSE;
@@ -220,7 +222,7 @@ int llwrite(const unsigned char *buf, int bufSize) {
             unsigned char byte_C = 0;
             unsigned char byte;
 
-            LinkLayerState state = START_STATE;
+            state = START_STATE;
 
             while (state != STOP_STATE) {
                 start = clock();
