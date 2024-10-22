@@ -26,8 +26,7 @@
 #define C_DISC      0x0B
 #define SUF_FLAG    0x5E
 #define SUF_ESC     0x5D
-#define C_INF0      0x00
-#define C_INF1      0x80
+#define C_INF(N)    ((N) ? 0x80 : 0x00)
 #define C_RR(Nr)    (0xAA | Nr)
 #define C_REJ(Nr)   (0x54 | Nr)
 
@@ -112,7 +111,7 @@ int llwrite(const unsigned char *buf, int bufSize) {
 
     trama[0] = FLAG;
     trama[1] = A_T;
-    trama[2] = C_Ns ? C_INF1 : C_INF0;
+    trama[2] = C_Ns ? C_INF(1) : C_INF(0);
     trama[3] = trama[1] ^ trama[2];
     memcpy(trama + 4, buf, bufSize);
 
@@ -284,7 +283,7 @@ int llread(unsigned char *packet) {
                     break;
 
                 case A_RCV:
-                    if (byte == C_INF0 || byte == C_INF1) {
+                    if (byte == C_INF(0) || byte == C_INF(1)) {
                         state = C_RCV;
                         byte_C = byte;
                     }
@@ -316,15 +315,15 @@ int llread(unsigned char *packet) {
                         // C_ and A_ are the fields of the receiver send frame
                         unsigned char C_;
                         if (xor == BCC2) {
-                            if (byte_C == C_INF0) C_ = C_RR(1);
+                            if (byte_C == C_INF(0)) C_ = C_RR(1);
                             else C_ = C_RR(0);
                         } else {
-                            if ((C_Nr == 0 && byte_C == C_INF1) ||
-                                (C_Nr == 1 && byte_C == C_INF0)) {
-                                if (byte_C == C_INF0) C_ = C_RR(1);
+                            if ((C_Nr == 0 && byte_C == C_INF(1)) ||
+                                (C_Nr == 1 && byte_C == C_INF(0))) {
+                                if (byte_C == C_INF(0)) C_ = C_RR(1);
                                 else C_ = C_RR(0);
                             } else {
-                                if (byte_C == C_INF0) C_ = C_REJ(0);
+                                if (byte_C == C_INF(0)) C_ = C_REJ(0);
                                 else C_ = C_REJ(1);
                             }
                         }
@@ -340,7 +339,7 @@ int llread(unsigned char *packet) {
                             break;
                         }
 
-                        if ((C_Nr == 0 && byte_C == C_INF0) || (C_Nr == 1 && byte_C == C_INF1)) {
+                        if ((C_Nr == 0 && byte_C == C_INF(0)) || (C_Nr == 1 && byte_C == C_INF(1))) {
                             nextNr();
                             return newSize;
                         }
@@ -360,30 +359,6 @@ int llread(unsigned char *packet) {
     return -1;
 }
 
-// Destuffing
-// Returns 0 on success, -1 on error
-// newSize is the size of the destuffed buffer
-int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC2) {
-    if (buf == NULL || newSize == NULL) return -1;
-
-    if (bufSize < 1) return 1;
-
-    unsigned char *r = buf, *w = buf;
-
-    while (r < buf + bufSize) {
-        if (*r != ESC) *w++ = *r++;
-        else {
-            if (*(r + 1) == SUF_FLAG) *w++ = FLAG;
-            else if (*(r + 1) == SUF_ESC) *w++ = ESC;
-            r += 2;
-        }
-    }
-
-    *BCC2 = *(w - 1);
-    *newSize = w - buf - 1;
-    return 1;
-}
-
 ////////////////////////////////////////////////
 // LLCLOSE
 ////////////////////////////////////////////////
@@ -391,15 +366,14 @@ int llclose(int showStatistics)
 {
     switch (ROLE) {
         case LlTx:
-            printf("Closing connection\n");
             if (receivePacketRetransmission(A_R, C_DISC, A_T, C_DISC) == -1) return -1;
             
-            printf("Sending SVF\n");
             if (sendSVF(A_R, C_UA) != -1) return closeSerialPort();
             break;
             
         case LlRx:
             if (receivePacket(A_T, C_DISC) == 1) {
+                //if (receivePacketRetransmission(A_T, C_UA, A_R, C_DISC) != 1) return -1; // something goes wrong
                 if (sendSVF(A_R, C_DISC) != 1) return -1;
             }
             
@@ -427,6 +401,14 @@ void alarmDisable() {
     alarmCount = 0;
 }
 
+void nextNs() {
+    C_Ns = C_Ns ? 0 : 1;
+}
+
+void nextNr() {
+    C_Nr = C_Nr ? 0 : 1;
+}
+
 // Send Supervision Frame
 // Returns 1 on success, -1 on error
 int sendSVF(unsigned char A, unsigned char C) {
@@ -435,12 +417,77 @@ int sendSVF(unsigned char A, unsigned char C) {
     return (writeBytesSerialPort(buf_T, 5) < 0) ? -1 : 1;
 }
 
-void nextNs() {
-    C_Ns = C_Ns ? 0 : 1;
+// Destuffing
+// Returns 0 on success, -1 on error
+// newSize is the size of the destuffed buffer
+int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC2) {
+    if (buf == NULL || newSize == NULL) return -1;
+
+    if (bufSize < 1) return 1;
+
+    unsigned char *r = buf, *w = buf;
+
+    while (r < buf + bufSize) {
+        if (*r != ESC) *w++ = *r++;
+        else {
+            if (*(r + 1) == SUF_FLAG) *w++ = FLAG;
+            else if (*(r + 1) == SUF_ESC) *w++ = ESC;
+            r += 2;
+        }
+    }
+
+    *BCC2 = *(w - 1);
+    *newSize = w - buf - 1;
+    return 1;
 }
 
-void nextNr() {
-    C_Nr = C_Nr ? 0 : 1;
+int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED) {
+    LinkLayerState state = START_STATE;
+
+    while (state != STOP_STATE) {
+        unsigned char byte = 0;
+        int result;
+        if((result = readByteSerialPort(&byte)) < 0) {
+            printf("Error reading response\n");
+            return -1;
+        }
+
+        else if(result > 0){
+            switch (state) {
+                case START_STATE:
+                    if (byte == FLAG) state = FLAG_RCV;
+                    break;
+
+                case FLAG_RCV:
+                    if (byte == A_EXPECTED) state = A_RCV;
+                    else if (byte != FLAG) state = START_STATE;
+                    break;
+
+                case A_RCV:
+                    if (byte == C_EXPECTED) state = C_RCV;
+                    else if (byte == FLAG) state = FLAG_RCV;
+                    else state = START_STATE;
+                    break;
+
+                case C_RCV:
+                    if (byte == FLAG) state = FLAG_RCV;
+                    else if ((A_EXPECTED ^ C_EXPECTED) == byte) state = BCC_OK;
+                    else state = START_STATE;
+                    break;
+
+                case BCC_OK:
+                    if (byte == FLAG) state = STOP_STATE;
+                    else state = START_STATE;
+                    break;
+
+                default:
+                    state = START_STATE;
+
+            }
+        }
+    }
+
+    return 1;
 }
 
 int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECTED, unsigned char A_SEND, unsigned char C_SEND) {
@@ -519,51 +566,5 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
     return -1;
 }
 
-int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED) {
-    LinkLayerState state = START_STATE;
 
-    while (state != STOP_STATE) {
-        unsigned char byte = 0;
-        int result;
-        if((result = readByteSerialPort(&byte)) < 0) {
-            printf("Error reading response\n");
-            return -1;
-        }
 
-        else if(result > 0){
-            switch (state) {
-                case START_STATE:
-                    if (byte == FLAG) state = FLAG_RCV;
-                    break;
-
-                case FLAG_RCV:
-                    if (byte == A_EXPECTED) state = A_RCV;
-                    else if (byte != FLAG) state = START_STATE;
-                    break;
-
-                case A_RCV:
-                    if (byte == C_EXPECTED) state = C_RCV;
-                    else if (byte == FLAG) state = FLAG_RCV;
-                    else state = START_STATE;
-                    break;
-
-                case C_RCV:
-                    if (byte == FLAG) state = FLAG_RCV;
-                    else if ((A_EXPECTED ^ C_EXPECTED) == byte) state = BCC_OK;
-                    else state = START_STATE;
-                    break;
-
-                case BCC_OK:
-                    if (byte == FLAG) state = STOP_STATE;
-                    else state = START_STATE;
-                    break;
-
-                default:
-                    state = START_STATE;
-
-            }
-        }
-    }
-
-    return 1;
-}
