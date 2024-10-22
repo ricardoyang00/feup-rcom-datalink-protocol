@@ -82,16 +82,18 @@ int llopen(LinkLayer connectionParameters)
 
     switch (ROLE) {
         case LlTx:
-            if (receivePacketRetransmission(A_T, C_UA, A_T, C_SET)) return -1;
-
+            if (receivePacketRetransmission(A_T, C_UA, A_T, C_SET) != 1) {
+                printf("ops\n");
+                return -1;
+            }
             printf("TR: Connection Stablished!\n");
 
             break;
 
         case LlRx:
-            if (receivePacket(A_T, C_SET)) return -1;
+            if (receivePacket(A_T, C_SET) != 1) return -1;
 
-            if (sendSVF(A_T, C_UA)) return -1;
+            if (sendSVF(A_T, C_UA) != 1) return -1;
 
             printf("RVV: Connection Stablished!\n");
 
@@ -170,8 +172,6 @@ int llwrite(const unsigned char *buf, int bufSize) {
             printf("TR: Error reading response\n");
             return -1;
         }
-
-        if (result == 0) continue;
 
         else if (result > 0) {
             switch (state) {
@@ -256,19 +256,12 @@ int llread(unsigned char *packet) {
 
     while (state != STOP_STATE) {
 
-        if (pos >= MAX_PAYLOAD_SIZE) {
-            printf("RCV: Packet too big\n");
-            return -1;
-        }
-
         unsigned char byte;
         int result;
         if ((result = readByteSerialPort(&byte)) < 0) {
             printf("RCV: Error reading response\n");
             return -1;
         }
-
-        if (result == 0) continue;
 
         else if (result > 0) {
             switch (state) {
@@ -303,7 +296,7 @@ int llread(unsigned char *packet) {
                         int newSize = 0;
                         unsigned char BCC2 = 0;
 
-                        if (destuffing(packet, pos, &newSize, &BCC2)) {
+                        if (destuffing(packet, pos, &newSize, &BCC2) != 1) {
                             printf("RCV: Error destuffing\n");
                             return -1;
                         }
@@ -329,7 +322,7 @@ int llread(unsigned char *packet) {
                             }
                         }
 
-                        if (sendSVF(A_R, C_) < 0) {
+                        if (sendSVF(A_R, C_) != 1) {
                             printf("RCV: Error sending response\n");
                             return -1;
                         }
@@ -345,7 +338,6 @@ int llread(unsigned char *packet) {
 
                 default:
                     state = START_STATE;
-
             }
         }
     }
@@ -359,7 +351,7 @@ int llread(unsigned char *packet) {
 int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC2) {
     if (buf == NULL || newSize == NULL) return -1;
 
-    if (bufSize < 1) return 0;
+    if (bufSize < 1) return 1;
 
     unsigned char *r = buf, *w = buf;
     while (r < buf + bufSize) {
@@ -373,7 +365,7 @@ int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC
 
     *BCC2 = *(w - 1);
     *newSize = w - buf - 1;
-    return 0;
+    return 1;
 }
 
 ////////////////////////////////////////////////
@@ -383,15 +375,15 @@ int llclose(int showStatistics)
 {
     switch (ROLE) {
         case LlTx:
-            if (receivePacketRetransmission(A_R, C_DISC, A_T, C_DISC)) return closeSerialPort();
+            if (receivePacketRetransmission(A_R, C_DISC, A_T, C_DISC) == 1) return closeSerialPort();
 
-            if (sendSVF(A_R, C_UA)) return closeSerialPort();
+            if (sendSVF(A_R, C_UA) == 1) return closeSerialPort();
             break;
             
         case LlRx:
-            if (receivePacket(A_T, C_DISC)) return closeSerialPort();
+            if (receivePacket(A_T, C_DISC) == 1) return closeSerialPort();
 
-            if (receivePacketRetransmission(A_R, C_UA, A_R, C_DISC)) return closeSerialPort();
+            if (receivePacketRetransmission(A_R, C_UA, A_R, C_DISC) == 1) return closeSerialPort();
             break;
 
         default:
@@ -406,9 +398,8 @@ int llclose(int showStatistics)
 
 void alarmHandler(int signal) {
     printf("Alarm #%d\n", alarmCount + 1);
-
-    alarmEnabled = FALSE;
     alarmCount++;
+    alarmEnabled = TRUE;
 }
 
 void alarmDisable() {
@@ -418,11 +409,11 @@ void alarmDisable() {
 }
 
 // Send Supervision Frame
-// Returns 0 on success, -1 on error
+// Returns 1 on success, -1 on error
 int sendSVF(unsigned char A, unsigned char C) {
     unsigned char buf_T[5] = {FLAG, A, C, A ^ C, FLAG};
 
-    return (writeBytesSerialPort(buf_T, 5) < 0) ? -1 : 0;
+    return (writeBytesSerialPort(buf_T, 5) < 0) ? -1 : 1;
 }
 
 void nextNs() {
@@ -438,7 +429,7 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
 
     (void)signal(SIGALRM, alarmHandler);
 
-    if (sendSVF(A_SEND, C_SEND) < 0) return -1;
+    if (sendSVF(A_SEND, C_SEND) != 1) return -1;
 
     alarm(TIMEOUT); 
 
@@ -446,11 +437,9 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
         unsigned char byte = 0;
         int result;
         if((result = readByteSerialPort(&byte)) < 0) {
-            printf("Error reading response\n");
+            printf("Error reading UA frame\n");
             return -1;
         }
-
-        if (result == 0) continue;
 
         else if(result > 0){
             switch (state) {
@@ -488,13 +477,13 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
 
         if (state == STOP_STATE) {
             alarmDisable();
-            return 0;
+            return 1;
         }
         
         else if (alarmEnabled) {
             alarmEnabled = FALSE;
             if (alarmCount <= RETRANSMISSIONS) {
-                if (sendSVF(A_SEND, C_SEND) < 0) {
+                if (sendSVF(A_SEND, C_SEND) != 1) {
                     printf("Error writing send command\n");
                     return -1;
                 }
@@ -520,8 +509,6 @@ int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED) {
             printf("Error reading response\n");
             return -1;
         }
-
-        if (result == 0) continue;
 
         else if(result > 0){
             switch (state) {
@@ -558,5 +545,5 @@ int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED) {
         }
     }
 
-    return 0;
+    return 1;
 }
