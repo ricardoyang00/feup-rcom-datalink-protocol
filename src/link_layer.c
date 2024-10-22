@@ -235,7 +235,7 @@ int llwrite(const unsigned char *buf, int bufSize)
         }
 
         if (alarmEnabled) {
-            
+
             alarmEnabled = FALSE;
 
             if (alarmCount <= RETRANSMISSIONS) {
@@ -325,16 +325,18 @@ int llread(unsigned char *packet)
                         unsigned char C_;   // the response frame
 
                         if (xor == BCC2) {
-                            if (byte_C == C_INF(0)) C_ = C_RR(1);
-                            else C_ = C_RR(0);
-                        } else {
-                            if ((C_Nr == 0 && byte_C == C_INF(1)) ||
-                                (C_Nr == 1 && byte_C == C_INF(0))) {
-                                if (byte_C == C_INF(0)) C_ = C_RR(1);
-                                else C_ = C_RR(0);
+                            // BCC2 correct, send a positive acknowledgment (RR)
+                            C_ = (byte_C == C_INF(0)) ? C_RR(1) : C_RR(0);
+                        } 
+                        
+                        else {
+                            // BCC2 incorrect
+                            if ((C_Nr == 0 && byte_C == C_INF(1)) || (C_Nr == 1 && byte_C == C_INF(0))) {
+                                // received frame is the expected, send a positive acknowledgment (RR)
+                                C_ = (byte_C == C_INF(0)) ? C_RR(1) : C_RR(0);
                             } else {
-                                if (byte_C == C_INF(0)) C_ = C_REJ(0);
-                                else C_ = C_REJ(1);
+                                // received frame is not the expected, send a negative acknowledgment (REJ)
+                                C_ = (byte_C == C_INF(0)) ? C_REJ(0) : C_REJ(1);
                             }
                         }
 
@@ -349,6 +351,7 @@ int llread(unsigned char *packet)
                             break;
                         }
 
+                        // update sequence number
                         if ((C_Nr == 0 && byte_C == C_INF(0)) || (C_Nr == 1 && byte_C == C_INF(1))) {
                             nextNr();
                             return newSize;
@@ -358,10 +361,12 @@ int llread(unsigned char *packet)
                     } else {
                         packet[pos++] = byte;
                     }
+
                     break;
 
                 default:
                     state = START_STATE;
+                    
             }
         }
     }
