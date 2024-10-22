@@ -329,15 +329,23 @@ int llread(unsigned char *packet) {
                             }
                         }
 
+                        state = START_STATE;
+
                         if (sendSVF(A_R, C_) != 1) {
                             printf("RCV: Error sending response\n");
                             return -1;
+                        }
+
+                        if (C_ == C_REJ(0) || C_ == C_REJ(1)) {
+                            break;
                         }
 
                         if ((C_Nr == 0 && byte_C == C_INF0) || (C_Nr == 1 && byte_C == C_INF1)) {
                             nextNr();
                             return newSize;
                         }
+
+                        printf("RCV: Discarding frame, duplicate\n");
                     } else {
                         packet[pos++] = byte;
                     }
@@ -384,16 +392,17 @@ int llclose(int showStatistics)
     switch (ROLE) {
         case LlTx:
             printf("Closing connection\n");
-            if (receivePacketRetransmission(A_R, C_DISC, A_T, C_DISC) != -1) return closeSerialPort();
+            if (receivePacketRetransmission(A_R, C_DISC, A_T, C_DISC) == -1) return -1;
             
             printf("Sending SVF\n");
             if (sendSVF(A_R, C_UA) != -1) return closeSerialPort();
             break;
             
         case LlRx:
-            if (receivePacket(A_T, C_DISC) != -1) return closeSerialPort();
-
-            if (receivePacketRetransmission(A_R, C_UA, A_R, C_DISC) != -1) return closeSerialPort();
+            if (receivePacket(A_T, C_DISC) == 1) {
+                if (sendSVF(A_R, C_DISC) != 1) return -1;
+            }
+            
             break;
 
         default:
