@@ -7,14 +7,14 @@
 #include <stdio.h>
 #include<unistd.h>
 
-#define DATA 2
 #define C_START 1
+#define DATA 2
 #define C_END 3
 
 #define T_FILESIZE 0
 #define T_FILENAME 1
 
-#define MAX_FILENAME 50
+#define MAX_FILENAME 100
 
 enum state{
     RECV_START,
@@ -199,7 +199,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
     if (llopen(connectionParametersApp) == -1) {
         perror("Link layer error: Failed to open the connection.");
-        llclose(FALSE);
+        //llclose(FALSE);
         return;
     }
     
