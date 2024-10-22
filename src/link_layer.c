@@ -52,7 +52,6 @@ void alarmHandler(int signal);
 void alarmDisable();
 void nextNs();
 void nextNr();
-
 int sendSVF(unsigned char A, unsigned char C);
 int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC2);
 int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED);
@@ -63,7 +62,6 @@ int alarmCount = 0;
 int RETRANSMISSIONS = 0;
 int TIMEOUT = 0;
 LinkLayerRole ROLE;
-
 unsigned char C_Ns = 0;
 unsigned char C_Nr = 0;
 
@@ -80,6 +78,7 @@ int llopen(LinkLayer connectionParameters)
     TIMEOUT = connectionParameters.timeout;
 
     switch (ROLE) {
+
         case LlTx:
             if (receivePacketRetransmission(A_T, C_UA, A_T, C_SET) != 1) return -1;
 
@@ -103,12 +102,14 @@ int llopen(LinkLayer connectionParameters)
 ////////////////////////////////////////////////
 // LLWRITE
 ////////////////////////////////////////////////
-int llwrite(const unsigned char *buf, int bufSize) {
+int llwrite(const unsigned char *buf, int bufSize) 
+{
     if (buf == NULL) return -1;
 
     int tramaSize = bufSize + 6;
     unsigned char *trama = malloc(tramaSize);
 
+    // Create trama header
     trama[0] = FLAG;
     trama[1] = A_T;
     trama[2] = C_Ns ? C_INF(1) : C_INF(0);
@@ -120,8 +121,7 @@ int llwrite(const unsigned char *buf, int bufSize) {
         BCC2 ^= buf[i];
     }
 
-
-    // Stuffing
+    // Data and stuffing
     int pos = 4;
     for (int i = 0; i < bufSize; i++) {
         switch (buf[i]) {
@@ -143,14 +143,15 @@ int llwrite(const unsigned char *buf, int bufSize) {
         }
     }
     
+    // tail
     trama[pos++] = BCC2;
     trama[pos++] = FLAG;
 
 
     // Send trama
     LinkLayerState state = START_STATE;
-    (void)signal(SIGALRM, alarmHandler);
 
+    (void)signal(SIGALRM, alarmHandler);
 
     if (writeBytesSerialPort(trama, tramaSize) < 0) {
         free(trama);
@@ -159,11 +160,14 @@ int llwrite(const unsigned char *buf, int bufSize) {
     }
 
     alarm(TIMEOUT);
+
     unsigned char byte_C = 0, byte_A = 0; 
 
-    while (state != STOP_STATE && alarmCount <= RETRANSMISSIONS) {
-        unsigned char byte;
+    while (state != STOP_STATE && alarmCount <= RETRANSMISSIONS) 
+    {
         int result;
+        unsigned char byte;
+        
         if ((result = readByteSerialPort(&byte)) < 0) {
             free(trama);
             printf("TR: Error reading response\n");
@@ -172,6 +176,7 @@ int llwrite(const unsigned char *buf, int bufSize) {
 
         else if (result > 0) {
             switch (state) {
+
                 case START_STATE:
                     byte_C = 0;
                     byte_A = 0;
@@ -208,28 +213,29 @@ int llwrite(const unsigned char *buf, int bufSize) {
 
                 default:
                     state = START_STATE;
+
             }
         }
 
         if (state == STOP_STATE) {
+
             if (byte_C == C_REJ(0) || byte_C == C_REJ(1)) {
                 alarmEnabled = TRUE;
                 alarmCount = 0;
-                printf("TR: Received REJ Frame\n");
+                printf("TR: Frame rejected\n");
             }
 
-            if (byte_C == C_RR(0) || byte_C == C_RR(1)) {
-                printf("TR: Received RR Frame\n");
+            else if (byte_C == C_RR(0) || byte_C == C_RR(1)) {
                 alarmDisable();
                 nextNs();
                 free(trama);
                 return bufSize;
             } 
-            
 
         }
 
         if (alarmEnabled) {
+            
             alarmEnabled = FALSE;
 
             if (alarmCount <= RETRANSMISSIONS) {
@@ -254,16 +260,18 @@ int llwrite(const unsigned char *buf, int bufSize) {
 ////////////////////////////////////////////////
 // LLREAD
 ////////////////////////////////////////////////
-int llread(unsigned char *packet) {
+int llread(unsigned char *packet) 
+{
     unsigned char byte_C = 0;
     int pos = 0;
 
     LinkLayerState state = START_STATE;
 
-    while (state != STOP_STATE) {
-
-        unsigned char byte = 0;
+    while (state != STOP_STATE) 
+    {
         int result;
+        unsigned char byte = 0;
+        
         if ((result = readByteSerialPort(&byte)) < 0) {
             printf("RCV: Error reading response\n");
             return -1;
@@ -271,6 +279,7 @@ int llread(unsigned char *packet) {
 
         else if (result > 0) {
             switch (state) {
+
                 case START_STATE:
                     pos = 0;
                     byte_C = 0;
@@ -307,13 +316,14 @@ int llread(unsigned char *packet) {
                             return -1;
                         }
 
+                        // create BCC2
                         unsigned char xor = packet[0];
                         for (int i = 1; i < newSize; i++) {
                             xor ^= packet[i];
                         }
 
-                        // C_ and A_ are the fields of the receiver send frame
-                        unsigned char C_;
+                        unsigned char C_;   // the response frame
+
                         if (xor == BCC2) {
                             if (byte_C == C_INF(0)) C_ = C_RR(1);
                             else C_ = C_RR(0);
@@ -365,10 +375,12 @@ int llread(unsigned char *packet) {
 int llclose(int showStatistics)
 {
     switch (ROLE) {
+
         case LlTx:
             if (receivePacketRetransmission(A_R, C_DISC, A_T, C_DISC) == -1) return -1;
             
             if (sendSVF(A_R, C_UA) != -1) return closeSerialPort();
+
             break;
             
         case LlRx:
@@ -389,48 +401,73 @@ int llclose(int showStatistics)
     return closeSerialPort();
 }
 
-void alarmHandler(int signal) {
+
+////////////////////////////////////////////////
+// AUXILIARY FUNCTIONS
+////////////////////////////////////////////////
+
+// Alarm handler
+void alarmHandler(int signal) 
+{
     printf("Alarm #%d\n", alarmCount + 1);
     alarmCount++;
     alarmEnabled = TRUE;
 }
 
-void alarmDisable() {
+// Disable alarm
+void alarmDisable() 
+{
     alarm(0);
     alarmEnabled = FALSE;
     alarmCount = 0;
 }
 
-void nextNs() {
+// Switch Ns between 0 and 1
+void nextNs() 
+{
     C_Ns = C_Ns ? 0 : 1;
 }
 
-void nextNr() {
+// Switch Nr between 0 and 1
+void nextNr() 
+{
     C_Nr = C_Nr ? 0 : 1;
 }
 
 // Send Supervision Frame
 // Returns 1 on success, -1 on error
-int sendSVF(unsigned char A, unsigned char C) {
+int sendSVF(unsigned char A, unsigned char C) 
+{
     unsigned char buf_T[5] = {FLAG, A, C, A ^ C, FLAG};
 
     return (writeBytesSerialPort(buf_T, 5) < 0) ? -1 : 1;
 }
 
-// Destuffing
-// Returns 0 on success, -1 on error
-// newSize is the size of the destuffed buffer
-int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC2) {
+/**
+ * @brief Perform byte destuffing on the input buffer.
+ *
+ * This function processes the input buffer to remove escape sequences and
+ * reconstruct the original data. It also extracts the BCC2 (Block Check Character 2)
+ * from the buffer.
+ *
+ * @param buf The input buffer containing the stuffed data.
+ * @param bufSize The size of the input buffer.
+ * @param newSize Pointer to an integer where the new size of the buffer will be stored.
+ * @param BCC2 Pointer to an unsigned char where the BCC2 will be stored.
+ * @return int Returns 1 on success, -1 on error (e.g., null pointers), 1 on invalid buffer size.
+ */
+int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC2) 
+{
     if (buf == NULL || newSize == NULL) return -1;
-
     if (bufSize < 1) return 1;
 
     unsigned char *r = buf, *w = buf;
 
     while (r < buf + bufSize) {
-        if (*r != ESC) *w++ = *r++;
+        if (*r != ESC) *w++ = *r++; // if not escape, copy byte
         else {
-            if (*(r + 1) == SUF_FLAG) *w++ = FLAG;
+            // if ESC, check next and replace with FLAG/ESC
+            if (*(r + 1) == SUF_FLAG) *w++ = FLAG;  
             else if (*(r + 1) == SUF_ESC) *w++ = ESC;
             r += 2;
         }
@@ -438,15 +475,19 @@ int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC
 
     *BCC2 = *(w - 1);
     *newSize = w - buf - 1;
+
     return 1;
 }
 
-int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED) {
+int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED) 
+{
     LinkLayerState state = START_STATE;
 
-    while (state != STOP_STATE) {
-        unsigned char byte = 0;
+    while (state != STOP_STATE) 
+    {
         int result;
+        unsigned char byte = 0;
+        
         if((result = readByteSerialPort(&byte)) < 0) {
             printf("Error reading response\n");
             return -1;
@@ -454,6 +495,7 @@ int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED) {
 
         else if(result > 0){
             switch (state) {
+
                 case START_STATE:
                     if (byte == FLAG) state = FLAG_RCV;
                     break;
@@ -490,7 +532,10 @@ int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED) {
     return 1;
 }
 
-int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECTED, unsigned char A_SEND, unsigned char C_SEND) {
+// Receive packet with retransmission
+// Returns 1 on success, -1 on error
+int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECTED, unsigned char A_SEND, unsigned char C_SEND) 
+{
     LinkLayerState state = START_STATE;
 
     (void)signal(SIGALRM, alarmHandler);
@@ -499,9 +544,11 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
 
     alarm(TIMEOUT); 
 
-    while (state != STOP_STATE && alarmCount <= RETRANSMISSIONS) {
-        unsigned char byte = 0;
+    while (state != STOP_STATE && alarmCount <= RETRANSMISSIONS) 
+    {
         int result;
+        unsigned char byte = 0;
+        
         if((result = readByteSerialPort(&byte)) < 0) {
             printf("Error reading UA frame\n");
             return -1;
@@ -509,6 +556,7 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
 
         else if(result > 0){
             switch (state) {
+
                 case START_STATE:
                     if (byte == FLAG) state = FLAG_RCV;
                     break;
@@ -548,11 +596,14 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
         
         else if (alarmEnabled) {
             alarmEnabled = FALSE;
+
             if (alarmCount <= RETRANSMISSIONS) {
+
                 if (sendSVF(A_SEND, C_SEND) != 1) {
                     printf("Error writing send command\n");
                     return -1;
                 }
+
                 alarm(TIMEOUT);
             }
             
@@ -561,7 +612,6 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
     }
 
     alarmDisable();
-    printf("returning -1\n");
     
     return -1;
 }
