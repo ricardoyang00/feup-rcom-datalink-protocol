@@ -82,11 +82,9 @@ int llopen(LinkLayer connectionParameters)
 
     switch (ROLE) {
         case LlTx:
-            if (receivePacketRetransmission(A_T, C_UA, A_T, C_SET) != 1) {
-                printf("ops\n");
-                return -1;
-            }
-            printf("TR: Connection Stablished!\n");
+            if (receivePacketRetransmission(A_T, C_UA, A_T, C_SET) != 1) return -1;
+
+            printf("TR: Connection Established!\n");
 
             break;
 
@@ -95,7 +93,7 @@ int llopen(LinkLayer connectionParameters)
 
             if (sendSVF(A_T, C_UA) != 1) return -1;
 
-            printf("RVV: Connection Stablished!\n");
+            printf("RCV: Connection Established!\n");
 
             break;
     }
@@ -162,7 +160,7 @@ int llwrite(const unsigned char *buf, int bufSize) {
     }
 
     alarm(TIMEOUT);
-    unsigned char byte_C = 0; 
+    unsigned char byte_C = 0, byte_A = 0; 
 
     while (state != STOP_STATE && alarmCount <= RETRANSMISSIONS) {
         unsigned char byte;
@@ -177,11 +175,15 @@ int llwrite(const unsigned char *buf, int bufSize) {
             switch (state) {
                 case START_STATE:
                     byte_C = 0;
+                    byte_A = 0;
                     if (byte == FLAG) state = FLAG_RCV;
                     break;
 
                 case FLAG_RCV:
-                    if (byte == A_R) state = A_RCV;
+                    if (byte == A_R || byte == A_T) {
+                        state = A_RCV;
+                        byte_A = byte;
+                    }
                     else if (byte != FLAG) state = START_STATE;
                     break;
 
@@ -196,7 +198,7 @@ int llwrite(const unsigned char *buf, int bufSize) {
 
                 case C_RCV:
                     if (byte == FLAG) state = FLAG_RCV;
-                    else if ((A_R ^ byte_C) == byte) state = BCC_OK;
+                    else if ((byte_A ^ byte_C) == byte) state = BCC_OK;
                     else state = START_STATE;
                     break;
 
@@ -211,16 +213,21 @@ int llwrite(const unsigned char *buf, int bufSize) {
         }
 
         if (state == STOP_STATE) {
-            if (byte_C == C_RR(0) || byte_C == C_RR(1)) {
-                alarmDisable();
-                nextNs();
-                free(trama);
-                return bufSize;
-            } else if (byte_C == C_REJ(0) || byte_C == C_REJ(1)) {
+            if (byte_C == C_REJ(0) || byte_C == C_REJ(1)) {
                 alarmEnabled = TRUE;
                 alarmCount = 0;
                 printf("TR: Received REJ Frame\n");
             }
+
+            if (byte_C == C_RR(0) || byte_C == C_RR(1)) {
+                printf("TR: Received RR Frame\n");
+                alarmDisable();
+                nextNs();
+                free(trama);
+                return bufSize;
+            } 
+            
+
         }
 
         if (alarmEnabled) {
@@ -249,14 +256,14 @@ int llwrite(const unsigned char *buf, int bufSize) {
 // LLREAD
 ////////////////////////////////////////////////
 int llread(unsigned char *packet) {
-    unsigned char byte_C;
+    unsigned char byte_C = 0;
     int pos = 0;
 
     LinkLayerState state = START_STATE;
 
     while (state != STOP_STATE) {
 
-        unsigned char byte;
+        unsigned char byte = 0;
         int result;
         if ((result = readByteSerialPort(&byte)) < 0) {
             printf("RCV: Error reading response\n");
@@ -354,6 +361,7 @@ int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC
     if (bufSize < 1) return 1;
 
     unsigned char *r = buf, *w = buf;
+
     while (r < buf + bufSize) {
         if (*r != ESC) *w++ = *r++;
         else {
@@ -375,15 +383,17 @@ int llclose(int showStatistics)
 {
     switch (ROLE) {
         case LlTx:
-            if (receivePacketRetransmission(A_R, C_DISC, A_T, C_DISC) == 1) return closeSerialPort();
-
-            if (sendSVF(A_R, C_UA) == 1) return closeSerialPort();
+            printf("Closing connection\n");
+            if (receivePacketRetransmission(A_R, C_DISC, A_T, C_DISC) != -1) return closeSerialPort();
+            
+            printf("Sending SVF\n");
+            if (sendSVF(A_R, C_UA) != -1) return closeSerialPort();
             break;
             
         case LlRx:
-            if (receivePacket(A_T, C_DISC) == 1) return closeSerialPort();
+            if (receivePacket(A_T, C_DISC) != -1) return closeSerialPort();
 
-            if (receivePacketRetransmission(A_R, C_UA, A_R, C_DISC) == 1) return closeSerialPort();
+            if (receivePacketRetransmission(A_R, C_UA, A_R, C_DISC) != -1) return closeSerialPort();
             break;
 
         default:
@@ -460,7 +470,7 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
 
                 case C_RCV:
                     if (byte == FLAG) state = FLAG_RCV;
-                    else if ((A_EXPECTED ^ C_EXPECTED) == byte) state = BCC_OK;
+                    else if ((C_EXPECTED ^ A_EXPECTED) == byte) state = BCC_OK;
                     else state = START_STATE;
                     break;
 
@@ -495,6 +505,7 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
     }
 
     alarmDisable();
+    printf("returning -1\n");
     
     return -1;
 }
