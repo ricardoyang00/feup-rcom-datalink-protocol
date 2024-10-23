@@ -2,6 +2,7 @@
 
 #include "link_layer.h"
 #include "serial_port.h"
+#include "protocol.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -16,19 +17,6 @@
 
 // MISC
 #define _POSIX_SOURCE 1 // POSIX compliant source
-
-#define FLAG        0x7E
-#define ESC         0x7D
-#define A_T         0x03
-#define A_R         0x01
-#define C_SET       0x03
-#define C_UA        0x07
-#define C_DISC      0x0B
-#define SUF_FLAG    0x5E
-#define SUF_ESC     0x5D
-#define C_INF(N)    ((N) ? 0x80 : 0x00)
-#define C_RR(Nr)    (0xAA | Nr)
-#define C_REJ(Nr)   (0x54 | Nr)
 
 typedef enum {
     START_STATE, 
@@ -52,7 +40,7 @@ void alarmHandler(int signal);
 void alarmDisable();
 void nextNs();
 void nextNr();
-int sendSVF(unsigned char A, unsigned char C);
+int sendCommandPacket(unsigned char A, unsigned char C);
 int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC2);
 int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED);
 int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECTED, unsigned char A_SEND, unsigned char C_SEND);
@@ -89,7 +77,7 @@ int llopen(LinkLayer connectionParameters)
         case LlRx:
             if (receivePacket(A_T, C_SET) != 1) return -1;
 
-            if (sendSVF(A_T, C_UA) != 1) return -1;
+            if (sendCommandPacket(A_T, C_UA) != 1) return -1;
 
             printf("RCV: Connection Established!\n");
 
@@ -222,7 +210,7 @@ int llwrite(const unsigned char *buf, int bufSize)
             if (byte_C == C_REJ(0) || byte_C == C_REJ(1)) {
                 alarmEnabled = TRUE;
                 alarmCount = 0;
-                printf("TR: Frame rejected\n");
+                printf("TR: Frame rejected, resending frame\n");
             }
 
             else if (byte_C == C_RR(0) || byte_C == C_RR(1)) {
@@ -342,7 +330,7 @@ int llread(unsigned char *packet)
 
                         state = START_STATE;
 
-                        if (sendSVF(A_R, C_) != 1) {
+                        if (sendCommandPacket(A_R, C_) != 1) {
                             printf("RCV: Error sending response\n");
                             return -1;
                         }
@@ -384,14 +372,14 @@ int llclose(int showStatistics)
         case LlTx:
             if (receivePacketRetransmission(A_R, C_DISC, A_T, C_DISC) == -1) return -1;
             
-            if (sendSVF(A_R, C_UA) != -1) return closeSerialPort();
+            if (sendCommandPacket(A_R, C_UA) != -1) return closeSerialPort();
 
             break;
             
         case LlRx:
             if (receivePacket(A_T, C_DISC) == 1) {
                 //if (receivePacketRetransmission(A_T, C_UA, A_R, C_DISC) != 1) return -1; // something goes wrong
-                if (sendSVF(A_R, C_DISC) != 1) return -1;
+                if (sendCommandPacket(A_R, C_DISC) != 1) return -1;
             }
             
             break;
@@ -439,9 +427,9 @@ void nextNr()
     C_Nr = C_Nr ? 0 : 1;
 }
 
-// Send Supervision Frame
+// Send Supervision Frame and Unnumbered Frame
 // Returns 1 on success, -1 on error
-int sendSVF(unsigned char A, unsigned char C) 
+int sendCommandPacket(unsigned char A, unsigned char C) 
 {
     unsigned char buf_T[5] = {FLAG, A, C, A ^ C, FLAG};
 
@@ -545,7 +533,7 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
 
     (void)signal(SIGALRM, alarmHandler);
 
-    if (sendSVF(A_SEND, C_SEND) != 1) return -1;
+    if (sendCommandPacket(A_SEND, C_SEND) != 1) return -1;
 
     alarm(TIMEOUT); 
 
@@ -604,7 +592,7 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
 
             if (alarmCount <= RETRANSMISSIONS) {
 
-                if (sendSVF(A_SEND, C_SEND) != 1) {
+                if (sendCommandPacket(A_SEND, C_SEND) != 1) {
                     printf("Error writing send command\n");
                     return -1;
                 }
