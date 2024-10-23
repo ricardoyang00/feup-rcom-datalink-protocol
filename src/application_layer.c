@@ -8,7 +8,7 @@
 #include<unistd.h>
 
 #define C_START 1
-#define DATA 2
+#define C_DATA 2
 #define C_END 3
 
 #define T_FILESIZE 0
@@ -40,7 +40,7 @@ int sendPacketData(size_t nBytes, unsigned char *data)
     unsigned char *packet = (unsigned char *) malloc(nBytes + 3);
     if(packet == NULL) return -1;
     
-    packet[0] = DATA;
+    packet[0] = C_DATA;
     packet[1] = nBytes >> 8;
     packet[2] = nBytes & 0xFF;
 
@@ -122,7 +122,7 @@ int sendPacketControl(unsigned char C, const char * filename, size_t file_size)
 unsigned char * readPacketData(unsigned char *buff, size_t *newSize)
 {
     if (buff == NULL) return NULL;
-    if (buff[0] != DATA) return NULL;
+    if (buff[0] != C_DATA) return NULL;
 
     *newSize = buff[1] * 256 + buff[2];
 
@@ -295,7 +295,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                     llclose(FALSE);
                     return;
                 }
-            }else if(buf[0] == DATA){
+            }else if(buf[0] == C_DATA){
                 packet = readPacketData(buf, &bytes_readed);
                 if(packet == NULL) {
                     perror("Packet error: Failed to read data packet.");
