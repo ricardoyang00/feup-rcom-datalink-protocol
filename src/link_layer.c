@@ -40,7 +40,7 @@ void alarmHandler(int signal);
 void alarmDisable();
 void nextNs();
 void nextNr();
-int sendCommandPacket(unsigned char A, unsigned char C);
+int sendPacketPacket(unsigned char A, unsigned char C);
 int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC2);
 int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED);
 int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECTED, unsigned char A_SEND, unsigned char C_SEND);
@@ -77,7 +77,7 @@ int llopen(LinkLayer connectionParameters)
         case LlRx:
             if (receivePacket(A_T, C_SET) != 1) return -1;
 
-            if (sendCommandPacket(A_T, C_UA) != 1) return -1;
+            if (sendPacketPacket(A_T, C_UA) != 1) return -1;
 
             printf("RCV: Connection Established!\n");
 
@@ -330,7 +330,7 @@ int llread(unsigned char *packet)
 
                         state = START_STATE;
 
-                        if (sendCommandPacket(A_R, C_) != 1) {
+                        if (sendPacketPacket(A_R, C_) != 1) {
                             printf("RCV: Error sending response\n");
                             return -1;
                         }
@@ -372,14 +372,14 @@ int llclose(int showStatistics)
         case LlTx:
             if (receivePacketRetransmission(A_R, C_DISC, A_T, C_DISC) == -1) return -1;
             
-            if (sendCommandPacket(A_R, C_UA) != -1) return closeSerialPort();
+            if (sendPacketPacket(A_R, C_UA) != -1) return closeSerialPort();
 
             break;
             
         case LlRx:
             if (receivePacket(A_T, C_DISC) == 1) {
                 //if (receivePacketRetransmission(A_T, C_UA, A_R, C_DISC) != 1) return -1; // something goes wrong
-                if (sendCommandPacket(A_R, C_DISC) != 1) return -1;
+                if (sendPacketPacket(A_R, C_DISC) != 1) return -1;
             }
             
             break;
@@ -429,7 +429,7 @@ void nextNr()
 
 // Send Supervision Frame and Unnumbered Frame
 // Returns 1 on success, -1 on error
-int sendCommandPacket(unsigned char A, unsigned char C) 
+int sendPacketPacket(unsigned char A, unsigned char C) 
 {
     unsigned char buf_T[5] = {FLAG, A, C, A ^ C, FLAG};
 
@@ -533,7 +533,7 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
 
     (void)signal(SIGALRM, alarmHandler);
 
-    if (sendCommandPacket(A_SEND, C_SEND) != 1) return -1;
+    if (sendPacketPacket(A_SEND, C_SEND) != 1) return -1;
 
     alarm(TIMEOUT); 
 
@@ -592,7 +592,7 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
 
             if (alarmCount <= RETRANSMISSIONS) {
 
-                if (sendCommandPacket(A_SEND, C_SEND) != 1) {
+                if (sendPacketPacket(A_SEND, C_SEND) != 1) {
                     printf("Error writing send command\n");
                     return -1;
                 }
