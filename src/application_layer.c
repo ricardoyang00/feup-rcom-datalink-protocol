@@ -167,9 +167,9 @@ int readPacketControl(unsigned char * buff)
         if (fileProps.file_size != fileProps.bytesRead) {
             perror("Number of bytes read doesn't match size of file\n");
         }
-        if(strcmp(fileProps.file_name, file_name)){
+        /*if(strcmp(fileProps.file_name, file_name)){
             perror("Names of file given in the start and end packets don't match\n");
-        }
+        }*/
         printf("[INFO] Finished receiving file: '%s'\n", file_name);
     }
     

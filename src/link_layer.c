@@ -389,7 +389,7 @@ int llclose(int showStatistics)
 
     }
 
-    printf("Connection closed\n");
+    //printf("Connection closed\n");
 
     return closeSerialPort();
 }
