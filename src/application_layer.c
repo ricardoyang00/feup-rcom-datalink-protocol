@@ -31,22 +31,24 @@ typedef struct
 
 enum state stateReceive = RECV_START;
 FileProps fileProps = {0, "", 0};
+int sequenceNumber = 0;
 
 
 int sendPacketData(size_t nBytes, unsigned char *data) 
 {
     if(data == NULL) return -1;
     
-    unsigned char *packet = (unsigned char *) malloc(nBytes + 3);
+    unsigned char *packet = (unsigned char *) malloc(nBytes + 4);
     if(packet == NULL) return -1;
     
     packet[0] = C_DATA;
-    packet[1] = nBytes >> 8;
-    packet[2] = nBytes & 0xFF;
+    packet[1] = sequenceNumber % 100;
+    packet[2] = nBytes >> 8;
+    packet[3] = nBytes & 0xFF;
 
-    memcpy(packet + 3, data, nBytes);
+    memcpy(packet + 4, data, nBytes);
 
-    int result = llwrite(packet, nBytes + 3);
+    int result = llwrite(packet, nBytes + 4);
 
     free(packet);
 
@@ -124,9 +126,9 @@ unsigned char * readPacketData(unsigned char *buff, size_t *newSize)
     if (buff == NULL) return NULL;
     if (buff[0] != C_DATA) return NULL;
 
-    *newSize = buff[1] * 256 + buff[2];
+    *newSize = buff[2] * 256 + buff[3];
 
-    return buff + 3;
+    return buff + 4;
 }
 
 int readPacketControl(unsigned char * buff)
