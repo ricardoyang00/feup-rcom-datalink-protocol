@@ -12,13 +12,13 @@
 
 typedef struct
 {
-    size_t file_size;
-    char * file_name;
-    size_t bytesRead;
-} FileProps;
+    size_t size;
+    char * name;
+} FileProperties;
 
-FileProps fileProps = {0, "", 0};
+FileProperties fileProperties = {0, ""};
 int sequenceNumber = 0;
+size_t totalBytesRead = 0;
 
 int sendPacketData(size_t nBytes, unsigned char *data) 
 {
@@ -147,15 +147,15 @@ int readPacketControl(unsigned char * buff, int *isEnd)
     file_name[L2] = '\0';
 
     if(buff[0] == C_START){
-        fileProps.file_size = file_size;
-        fileProps.file_name = file_name;
+        fileProperties.size = file_size;
+        fileProperties.name = file_name;
         printf("[INFO] Started receiving file: '%s'\n", file_name);
     }
     if(buff[0] == C_END){
-        if (fileProps.file_size != fileProps.bytesRead) {
+        if (fileProperties.size != totalBytesRead) {
             perror("Number of bytes read doesn't match size of file\n");
         }
-        /*if(strcmp(fileProps.file_name, file_name)){
+        /*if(strcmp(fileProperties.name, file_name)){
             perror("Names of file given in the start and end packets don't match\n");
         }*/
         printf("[INFO] Finished receiving file: '%s'\n", file_name);
@@ -253,7 +253,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         
         FILE *file = fopen(filename, "wb");
         // To save the file with the same name as the one sent, use:
-        // FILE *file = fopen(fileProps.file_name, "wb");
+        // FILE *file = fopen(fileProperties.name, "wb");
         
         if(file == NULL) {
             perror("File error: Unable to open the file for writing.");
@@ -293,7 +293,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                     return;
                 }
                 fwrite(packet, 1, bytes_readed, file);
-                fileProps.bytesRead += bytes_readed;
+                totalBytesRead += bytes_readed;
             }
         }
 
