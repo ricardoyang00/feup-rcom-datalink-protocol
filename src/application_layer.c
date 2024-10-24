@@ -16,12 +16,6 @@
 
 #define MAX_FILENAME 100
 
-typedef enum {
-    RECV_START,
-    RECV_CONT,
-    RECV_END
-} state;
-
 typedef struct
 {
     size_t file_size;
@@ -29,10 +23,8 @@ typedef struct
     size_t bytesRead;
 } FileProps;
 
-state stateReceive = RECV_START;
 FileProps fileProps = {0, "", 0};
 int sequenceNumber = 0;
-
 
 int sendPacketData(size_t nBytes, unsigned char *data) 
 {
@@ -42,7 +34,7 @@ int sendPacketData(size_t nBytes, unsigned char *data)
     if(packet == NULL) return -1;
     
     packet[0] = C_DATA;
-    packet[1] = sequenceNumber % 100;
+    packet[1] = (sequenceNumber++) % 100;
     packet[2] = nBytes >> 8;
     packet[3] = nBytes & 0xFF;
 
@@ -132,7 +124,7 @@ int readPacketData(unsigned char *buff, size_t *newSize, unsigned char *dataPack
     return 1;
 }
 
-int readPacketControl(unsigned char * buff)
+int readPacketControl(unsigned char * buff, int *isEnd)
 {   
     if (buff == NULL) return -1;
     size_t indx = 0;
@@ -140,9 +132,8 @@ int readPacketControl(unsigned char * buff)
     char * file_name = malloc(MAX_FILENAME);
     if(file_name == NULL) return -1;
 
-    if(buff[indx] == C_START) stateReceive = RECV_CONT;
-    else if(buff[indx] == C_END) stateReceive = RECV_END;
-    else {
+    if(buff[indx] == C_END) *isEnd = TRUE;
+    else if (buff[indx] != C_START) {
         free(file_name);
         return -1;
     }
@@ -280,11 +271,12 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         }
 
         size_t bytes_readed = 0;
-        
-        while(stateReceive != RECV_END){
-            bytes_readed = llread(buf);
 
-            if(bytes_readed == -1) {
+        int isEnd = FALSE;
+
+        while(!isEnd){
+
+            if((bytes_readed = llread(buf)) == -1) {
                 perror("Link layer error: Failed to read from the link.");
                 fclose(file);
                 llclose(FALSE);
@@ -292,13 +284,15 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             }
             
             if(buf[0] == C_START || buf[0] == C_END){
-                if(readPacketControl(buf) == -1) {
+
+                if(readPacketControl(buf, &isEnd) == -1) {
                     perror("Packet error: Failed to read control packet.");
                     fclose(file);
                     llclose(FALSE);
                     return;
                 }
-            }else if(buf[0] == C_DATA){
+
+            } else if(buf[0] == C_DATA){
                 
                 if(readPacketData(buf, &bytes_readed, packet) == -1) {
                     perror("Packet error: Failed to read data packet.");
