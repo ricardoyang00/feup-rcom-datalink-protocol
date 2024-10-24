@@ -37,7 +37,6 @@ int sendPacketData(size_t nBytes, unsigned char *data)
     int result = llwrite(packet, nBytes + 4);
 
     free(packet);
-
     return result;
 }
 
@@ -74,7 +73,7 @@ size_t uchartoi (unsigned char n, unsigned char * numbers)
     return value;
 }
 
-int sendPacketControl(unsigned char C, const char * filename, size_t file_size)
+int sendPacketControl(unsigned char C, const char *filename, size_t file_size)
 {
     if(filename == NULL) return -1;
     
@@ -83,28 +82,33 @@ int sendPacketControl(unsigned char C, const char * filename, size_t file_size)
     if(V1 == NULL) return -1;
 
     unsigned char L2 = (unsigned char) strlen(filename);
+
     unsigned char *packet = (unsigned char *) malloc(5 + L1 + L2);
     if(packet == NULL) {
         free(V1);
         return -1;
     }
 
-    size_t indx = 0;
-    packet[indx++] = C;
-    packet[indx++] = T_FILESIZE;
-    packet[indx++] = L1;
-    memcpy(packet + indx, V1, L1); indx += L1;
-    packet[indx++] = T_FILENAME;
-    packet[indx++] = L2;
-    memcpy(packet + indx, filename, L2); indx += L2;  
+    size_t pos = 0;
+    packet[pos++] = C;
 
+    // file size (V1)
+    packet[pos++] = T_FILESIZE;
+    packet[pos++] = L1;
+    memcpy(packet + pos, V1, L1); 
+    pos += L1;
     free(V1);
-    
-    int res = llwrite(packet, (int) indx);
+
+    // file name (V2)
+    packet[pos++] = T_FILENAME;
+    packet[pos++] = L2;
+    memcpy(packet + pos, filename, L2); 
+    pos += L2;  
+
+    int result = llwrite(packet, (int) pos);
 
     free(packet);
-
-    return res;
+    return result;
 }
 
 int readPacketData(unsigned char *buff, size_t *newSize, unsigned char *dataPacket)
@@ -118,7 +122,7 @@ int readPacketData(unsigned char *buff, size_t *newSize, unsigned char *dataPack
     return 1;
 }
 
-int readPacketControl(unsigned char * buff, int *isEnd)
+int readPacketControl(unsigned char *buff, int *isEnd)
 {   
     if (buff == NULL) return -1;
 
@@ -127,7 +131,7 @@ int readPacketControl(unsigned char * buff, int *isEnd)
     if(buff[pos] == C_END) *isEnd = TRUE;
     else if (buff[pos] != C_START) return -1;
 
-    // Decode file size (V1)
+    // file size (V1)
     pos++;
     if (buff[pos++] != T_FILESIZE) return -1;
     unsigned char L1 = buff[pos++]; // V1 field size
@@ -135,21 +139,22 @@ int readPacketControl(unsigned char * buff, int *isEnd)
     unsigned char * V1 = malloc(L1);
     if(V1 == NULL) return -1;
 
-    memcpy(V1, buff + pos, L1);     // get V1 field
+    memcpy(V1, buff + pos, L1);
     pos += L1;
 
     size_t file_size = uchartoi(L1, V1);
     free(V1);
 
-    // Decode file name (V2)
+    // name (V2)
     if(buff[pos++] != T_FILENAME) return -1;
     unsigned char L2 = buff[pos++]; // V2 field size
 
     char * file_name = malloc(MAX_FILENAME);
     if(file_name == NULL) return -1;
 
-    memcpy(file_name, buff + pos, L2); // get V2 field
+    memcpy(file_name, buff + pos, L2);
     file_name[L2] = '\0';
+
 
     if(buff[0] == C_START){
         fileProperties.size = file_size;
@@ -159,15 +164,16 @@ int readPacketControl(unsigned char * buff, int *isEnd)
         if (fileProperties.size != totalBytesRead) {
             printf("[Warning] The received file size doesn't match the original file\n");
         }
+        
         /*if(strcmp(fileProperties.name, file_name)){
             printf("[Warning] The received file name doesn't match the original file\n");
-        }*/
+        }*/ //use this if you want to check if saved the file with the same name as the one sent
 
         printf("[INFO] Finished receiving file: '%s'\n", file_name);
     }
     
     free(file_name);
-    return 0;
+    return 1;
 }
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
