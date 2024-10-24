@@ -70,7 +70,7 @@ int llopen(LinkLayer connectionParameters)
         case LlTx:
             if (receiveRetransmissionFrame(A_T, C_UA, A_T, C_SET) != 1) return -1;
 
-            printf("TR: Connection Established!\n");
+            printf("[STATUS] Connection Established!\n");
 
             break;
 
@@ -79,7 +79,7 @@ int llopen(LinkLayer connectionParameters)
 
             if (sendCommandFrame(A_T, C_UA) != 1) return -1;
 
-            printf("RCV: Connection Established!\n");
+            printf("[STATUS] Connection Established!\n");
 
             break;
     }
@@ -94,15 +94,15 @@ int llwrite(const unsigned char *buf, int bufSize)
 {
     if (buf == NULL) return -1;
 
-    int tramaSize = bufSize + 6;
-    unsigned char *trama = malloc(tramaSize);
+    int frameSize = bufSize + 6;
+    unsigned char *frame = malloc(frameSize);
 
-    // Create trama header
-    trama[0] = FLAG;
-    trama[1] = A_T;
-    trama[2] = C_Ns ? C_INF(1) : C_INF(0);
-    trama[3] = trama[1] ^ trama[2];
-    memcpy(trama + 4, buf, bufSize);
+    // Create frame header
+    frame[0] = FLAG;
+    frame[1] = A_T;
+    frame[2] = C_Ns ? C_INF(1) : C_INF(0);
+    frame[3] = frame[1] ^ frame[2];
+    memcpy(frame + 4, buf, bufSize);
 
     unsigned char BCC2 = buf[0];
     for (int i = 1; i < bufSize; i++) {
@@ -114,36 +114,36 @@ int llwrite(const unsigned char *buf, int bufSize)
     for (int i = 0; i < bufSize; i++) {
         switch (buf[i]) {
             case FLAG:
-                trama = realloc(trama, ++tramaSize);
-                trama[pos++] = ESC;
-                trama[pos++] = SUF_FLAG;
+                frame = realloc(frame, ++frameSize);
+                frame[pos++] = ESC;
+                frame[pos++] = SUF_FLAG;
                 break;
 
             case ESC:
-                trama = realloc(trama, ++tramaSize);
-                trama[pos++] = ESC;
-                trama[pos++] = SUF_ESC;
+                frame = realloc(frame, ++frameSize);
+                frame[pos++] = ESC;
+                frame[pos++] = SUF_ESC;
                 break;
 
             default:
-                trama[pos++] = buf[i];
+                frame[pos++] = buf[i];
                 break;
         }
     }
     
     // tail
-    trama[pos++] = BCC2;
-    trama[pos++] = FLAG;
+    frame[pos++] = BCC2;
+    frame[pos++] = FLAG;
 
 
-    // Send trama
+    // Send frame
     LinkLayerState state = START_STATE;
 
     (void)signal(SIGALRM, alarmHandler);
 
-    if (writeBytesSerialPort(trama, tramaSize) < 0) {
-        free(trama);
-        printf("TR: Error writing send command\n");
+    if (writeBytesSerialPort(frame, frameSize) < 0) {
+        free(frame);
+        printf("[ERROR] Error writing send command\n");
         return -1;
     }
 
@@ -157,8 +157,8 @@ int llwrite(const unsigned char *buf, int bufSize)
         unsigned char byte;
         
         if ((result = readByteSerialPort(&byte)) < 0) {
-            free(trama);
-            printf("TR: Error reading response\n");
+            free(frame);
+            printf("[ERROR] Error reading response\n");
             return -1;
         }
 
@@ -210,13 +210,13 @@ int llwrite(const unsigned char *buf, int bufSize)
             if (byte_C == C_REJ(0) || byte_C == C_REJ(1)) {
                 alarmEnabled = TRUE;
                 alarmCount = 0;
-                printf("TR: Frame rejected, resending frame\n");
+                printf("[ALERT] Frame rejected, resending frame\n");
             }
 
             else if (byte_C == C_RR(0) || byte_C == C_RR(1)) {
                 alarmDisable();
                 nextNs();
-                free(trama);
+                free(frame);
                 return bufSize;
             } 
 
@@ -227,8 +227,8 @@ int llwrite(const unsigned char *buf, int bufSize)
             alarmEnabled = FALSE;
 
             if (alarmCount <= RETRANSMISSIONS) {
-                if (writeBytesSerialPort(trama, tramaSize) < 0) {
-                    printf("TR: Error writing send command\n");
+                if (writeBytesSerialPort(frame, frameSize) < 0) {
+                    printf("[ERROR] Error writing send command\n");
                     return -1;
                 }
 
@@ -240,7 +240,7 @@ int llwrite(const unsigned char *buf, int bufSize)
     }
 
     alarmDisable();
-    free(trama);
+    free(frame);
 
     return -1;
 }
@@ -261,7 +261,7 @@ int llread(unsigned char *packet)
         unsigned char byte = 0;
         
         if ((result = readByteSerialPort(&byte)) < 0) {
-            printf("RCV: Error reading response\n");
+            printf("[ERROR] Error reading response\n");
             return -1;
         }
 
@@ -300,7 +300,7 @@ int llread(unsigned char *packet)
                         unsigned char BCC2 = 0;
 
                         if (destuffing(packet, pos, &newSize, &BCC2) != 1) {
-                            printf("RCV: Error destuffing\n");
+                            printf("[ERROR] Error destuffing\n");
                             return -1;
                         }
 
@@ -331,7 +331,7 @@ int llread(unsigned char *packet)
                         state = START_STATE;
 
                         if (sendCommandFrame(A_R, C_) != 1) {
-                            printf("RCV: Error sending response\n");
+                            printf("[ERROR] Error sending response\n");
                             return -1;
                         }
 
@@ -345,7 +345,7 @@ int llread(unsigned char *packet)
                             return newSize;
                         }
 
-                        printf("RCV: Discarding frame, duplicate\n");
+                        printf("[ERROR] Discarding frame, duplicate\n");
                     } else {
                         packet[pos++] = byte;
                     }
@@ -378,8 +378,9 @@ int llclose(int showStatistics)
             
         case LlRx:
             if (receiveFrame(A_T, C_DISC) == 1) {
-                //if (receiveRetransmissionFrame(A_T, C_UA, A_R, C_DISC) != 1) return -1; // something goes wrong
+
                 if (sendCommandFrame(A_R, C_DISC) != 1) return -1;
+
             }
             
             break;
@@ -388,8 +389,6 @@ int llclose(int showStatistics)
             return -1;
 
     }
-
-    //printf("Connection closed\n");
 
     return closeSerialPort();
 }
@@ -425,15 +424,6 @@ void nextNs()
 void nextNr() 
 {
     C_Nr = C_Nr ? 0 : 1;
-}
-
-// Send Supervision Frame and Unnumbered Frame
-// Returns 1 on success, -1 on error
-int sendCommandFrame(unsigned char A, unsigned char C) 
-{
-    unsigned char buf_T[5] = {FLAG, A, C, A ^ C, FLAG};
-
-    return (writeBytesSerialPort(buf_T, 5) < 0) ? -1 : 1;
 }
 
 /**
@@ -472,6 +462,16 @@ int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC
     return 1;
 }
 
+// Send Supervision Frame and Unnumbered Frame
+// Returns 1 on success, -1 on error
+int sendCommandFrame(unsigned char A, unsigned char C) 
+{
+    unsigned char buf_T[5] = {FLAG, A, C, A ^ C, FLAG};
+
+    return (writeBytesSerialPort(buf_T, 5) < 0) ? -1 : 1;
+}
+
+// Receive Frame and check if it is the expected frame
 int receiveFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTED) 
 {
     LinkLayerState state = START_STATE;
@@ -482,7 +482,7 @@ int receiveFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTED)
         unsigned char byte = 0;
         
         if((result = readByteSerialPort(&byte)) < 0) {
-            printf("Error reading response\n");
+            printf("[ERROR] Error reading response\n");
             return -1;
         }
 
@@ -525,7 +525,7 @@ int receiveFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTED)
     return 1;
 }
 
-// Receive Frame with retransmission
+// Receive Frame with retransmission and check if it is the expected frame
 // Returns 1 on success, -1 on error
 int receiveRetransmissionFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTED, unsigned char A_SEND, unsigned char C_SEND) 
 {
@@ -543,7 +543,7 @@ int receiveRetransmissionFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTE
         unsigned char byte = 0;
         
         if((result = readByteSerialPort(&byte)) < 0) {
-            printf("Error reading UA frame\n");
+            printf("[ERROR] Error reading UA frame\n");
             return -1;
         }
 
@@ -593,7 +593,7 @@ int receiveRetransmissionFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTE
             if (alarmCount <= RETRANSMISSIONS) {
 
                 if (sendCommandFrame(A_SEND, C_SEND) != 1) {
-                    printf("Error writing send command\n");
+                    printf("[ERROR] Error writing send command\n");
                     return -1;
                 }
 
