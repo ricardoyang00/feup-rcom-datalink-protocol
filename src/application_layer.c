@@ -1,246 +1,347 @@
+// Application layer protocol implementation
+
 #include "application_layer.h"
 #include "link_layer.h"
-
+#include "protocol.h"
 #include <string.h>
-#include <fcntl.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <termios.h>
+#include <stdio.h>
 #include <unistd.h>
-#include <math.h>
 
-#define C_START 1
-#define C_DATA 2
-#define C_END 3
+#define MAX_FILENAME 100
+#define METADATA_SIZE 20
 
-void applicationLayerTransmitter(const char *filename);
-void applicationLayerReceiver(const char *filename);
-unsigned char *getControlPacket(unsigned int controlField, const char *filename, long int fileSize, unsigned int *controlPacketSize);
-unsigned char *getDataPacket(unsigned int sequenceNumber, const unsigned char *data, unsigned int dataSize, unsigned int *dataPacketSize);
+int readPacketControl(unsigned char *buff, int *isEnd);
+int readPacketData(unsigned char *buff, size_t *newSize, unsigned char *dataPacket);
+int sendPacketControl(unsigned char C, const char *filename, size_t file_size);
+int sendPacketData(size_t nBytes, unsigned char *data);
+unsigned char * sizetouchar(size_t value, unsigned char *size);
+size_t uchartosize (unsigned char n, unsigned char * numbers);
+
+int sequenceNumber = 0;
+size_t totalBytesRead = 0;
+
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
-                      int nTries, int timeout, const char *filename) {
-    LinkLayer connectionParameters = {
+                      int nTries, int timeout, const char *filename)
+{
+    if(serialPort == NULL || role == NULL || filename == NULL){
+        printf("[ERROR] Initialization error: One or more required arguments are NULL.");
+        return;
+    }
+
+    if (strlen(filename) > MAX_FILENAME) {
+        printf("[ALERT] The lenght of the given file name is greater than what is supported: %d characters'\n", MAX_FILENAME);
+        return;
+    }
+        
+    LinkLayer connectionParametersApp = {
         .baudRate = baudRate,
         .nRetransmissions = nTries,
         .timeout = timeout
     };
 
-    strcpy(connectionParameters.serialPort, serialPort);
-    connectionParameters.role = strcmp(role, "tx") == 0 ? LlTx : LlRx;
+    strcpy(connectionParametersApp.serialPort, serialPort);
+    connectionParametersApp.role = strcmp(role, "tx") == 0 ? LlTx : LlRx;
 
-    if (llopen(connectionParameters) != 1) {
-        printf("ERROR: Could not open connection\n");
-        return;
-    }
-
-    if (connectionParameters.role == LlTx) {
-        applicationLayerTransmitter(filename);
-    } else {
-        applicationLayerReceiver(filename);
-    }
-}
-
-void applicationLayerTransmitter(const char *filename) {
-    FILE *file = fopen(filename, "rb");
-    if (file == NULL) {
-        printf("ERROR: Could not open file\n");
-        return;
-    }
-
-    // current position of the file pointer
-    long int initialFilePosition = ftell(file);
-
-    // move the file pointer to the end of the file
-    fseek(file, 0L, SEEK_END);
-    
-    long int fileSize = ftell(file) - initialFilePosition;
-
-    // move the file pointer back to its original position
-    fseek(file, initialFilePosition, SEEK_SET);
-
-    unsigned int controlPacketSize;
-
-    // Start Control Packet
-    unsigned char *startControlPacket = getControlPacket(C_START, filename, fileSize, &controlPacketSize);
-
-    if (llwrite(startControlPacket, controlPacketSize) == -1) {
-        printf("Exit: error in start packet\n");
-        free(startControlPacket);
-        fclose(file);
+    if (llopen(connectionParametersApp) == -1) {
+        printf("[ERROR] Link layer error: Failed to open the connection.");
         return;
     }
     
-    // Data Packet
-    unsigned char *fileData = (unsigned char*) malloc(fileSize);
-    if (fileData == NULL) {
-        printf("ERROR: Could not allocate memory for file data\n");
-        free(startControlPacket);
-        fclose(file);
-        return;
-    }
-    fread(fileData, sizeof(unsigned char), fileSize, file);
-
-    unsigned char sequenceNumber = 0;
-    long int fileSizeRemaining = fileSize;
-    while (fileSizeRemaining != 0) {
-        unsigned int currentDataSize = fileSizeRemaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : fileSizeRemaining;
-        unsigned int dataPacketSize;
-        unsigned char *dataPacket = getDataPacket(sequenceNumber, fileData + (fileSize - fileSizeRemaining), currentDataSize, &dataPacketSize);
-
-        if (llwrite(dataPacket, dataPacketSize) == -1) {
-            printf("Error in data packet\n");
-            free(dataPacket);
-            free(fileData);
-            free(startControlPacket);
-            fclose(file);
+    if (connectionParametersApp.role == LlTx) {
+        size_t bytesRead = 0;
+        unsigned char *buffer = (unsigned char *) malloc(MAX_PAYLOAD_SIZE + METADATA_SIZE);
+        if(buffer == NULL) {
+            printf(" [ERROR] Memory allocation error at buffer creation.");
+            llclose(FALSE);
             return;
         }
 
-        fileSizeRemaining -= currentDataSize;
-        sequenceNumber = (sequenceNumber + 1) % 100;
-        free(dataPacket);
-    }
+        FILE* file = fopen(filename, "rb");
+        if(file == NULL) {
+            printf("[ERROR] File error: Unable to open the file for reading.");
+            fclose(file);
+            free(buffer);
+            llclose(FALSE);
+            return;
+        }
 
-    // End Control Packet
-    unsigned char *endControlPacket = getControlPacket(C_END, filename, fileSize, &controlPacketSize);
+        fseek(file, 0, SEEK_END);
+        size_t file_size = ftell(file);
+        rewind(file);
 
-    if (llwrite(endControlPacket, controlPacketSize) == -1) {
-        printf("Error in end packet\n");
-        free(endControlPacket);
-        free(fileData);
-        free(startControlPacket);
-        fclose(file);
-        return;
-    }
+        if(sendPacketControl(C_START, filename, file_size) == -1) {
+            printf("[ERROR] Transmission error: Failed to send the START packet control.");
+            fclose(file);
+            llclose(FALSE);
+            return;
+        }
 
-    fclose(file);
-    free(startControlPacket);
-    free(endControlPacket);
-    free(fileData);
-    llclose(TRUE);
-}
-
-void applicationLayerReceiver(const char *filename) {
-    unsigned char *packet = (unsigned char*) malloc(MAX_PAYLOAD_SIZE);
-    if (packet == NULL) {
-        printf("ERROR: Could not allocate memory for packet\n");
-        return;
-    }
-
-    // Start Control Packet
-    int packetSize = 0;
-    while ((packetSize = llread(packet)) < 0);
-
-    // File Size
-    unsigned long int receivedFileSize = 0;
-    unsigned char fileSizeLength = packet[2];
-    for (unsigned int i = 0; i < fileSizeLength; i++) {
-        receivedFileSize |= (packet[2 + fileSizeLength - i] << (8 * i));
-    } // important to verify if the entire file has been transferred correctly
-
-    // File Name
-    unsigned char fileNameLength = packet[4 + fileSizeLength];
-    unsigned char *fileName = (unsigned char *) malloc(fileNameLength + 1);
-    if (fileName == NULL) {
-        printf("ERROR: Could not allocate memory for file name\n");
-        free(packet);
-        return;
-    }
-
-    memcpy(fileName, packet + fileSizeLength + 5, fileNameLength);
-    fileName[fileNameLength] = '\0';
-    
-    // New File received
-    FILE *newFile = fopen(filename, "wb+");
-    /*FILE *newFile = fopen((char *)fileName, "wb+");
-    if (newFile == NULL) {
-        printf("ERROR: Could not open file for writing\n");
-        free(packet);
-        free(fileName);
-        return;
-    }*/
-
-    unsigned long int totalReceivedDataSize = 0;
-    while (TRUE) {
-        while ((packetSize = llread(packet)) < 0);
-        
-        if (packetSize == 0) break;
-        else if (packet[0] == C_DATA){
-            unsigned char *dataBuffer = (unsigned char*) malloc(packetSize - 4);
-
-            if (dataBuffer == NULL) {
-                printf("ERROR: Could not allocate memory for data buffer\n");
-                free(packet);
-                free(fileName);
-                fclose(newFile);
+        while ((bytesRead = fread(buffer, 1, MAX_PAYLOAD_SIZE, file)) > 0) {
+            
+            if(sendPacketData(bytesRead, buffer) == -1){
+                printf("[ERROR] Transmission error: Failed to send the DATA packet control.");
+                fclose(file);
+                llclose(FALSE);
                 return;
             }
-            totalReceivedDataSize += (packetSize - 4);
-            memcpy(dataBuffer, packet + 4, packetSize - 4);
-            fwrite(dataBuffer, sizeof(unsigned char), packetSize - 4, newFile);
-            free(dataBuffer);
         }
+
+        if(sendPacketControl(C_END, filename, file_size) == -1){
+            printf("[ERROR] Transmission error: Failed to send the END packet control.");
+            fclose(file);
+            llclose(FALSE);
+            return;
+        }
+
+        fclose(file);
+    } 
+    
+    if (connectionParametersApp.role == LlRx) {
+        unsigned char * buf = malloc(MAX_PAYLOAD_SIZE + METADATA_SIZE);
+        unsigned char * packet = malloc(MAX_PAYLOAD_SIZE + METADATA_SIZE);
+
+        if(buf == NULL || packet == NULL){
+            printf("[ERROR] Initialization error: One or more buffers pointers are NULL.");
+            llclose(FALSE);
+            return;
+        }
+   
+        FILE *file = fopen(filename, "wb");
+        
+        if(file == NULL) {
+            printf("[ERROR] File error: Unable to open the file for writing.");
+            fclose(file);
+            llclose(FALSE);
+            return;
+        }
+
+        size_t bytes_readed = 0;
+        int isEnd = FALSE;
+
+        while(!isEnd){
+
+            if((bytes_readed = llread(buf)) == -1) {
+                printf("[ERROR] Link layer error: Failed to read from the link.");
+                fclose(file);
+                llclose(FALSE);
+                return;
+            }
+            
+            if(buf[0] == C_START || buf[0] == C_END){
+
+                if(readPacketControl(buf, &isEnd) == -1) {
+                    printf("[ERROR] Packet error: Failed to read control packet.");
+                    fclose(file);
+                    llclose(FALSE);
+                    return;
+                }
+
+            } else if(buf[0] == C_DATA){
+                
+                if(readPacketData(buf, &bytes_readed, packet) == -1) {
+                    printf("[ERROR] Packet error: Failed to read data packet.");
+                    fclose(file);
+                    llclose(FALSE);
+                    return;
+                }
+                fwrite(packet, 1, bytes_readed, file);
+                totalBytesRead += bytes_readed;
+            }
+        }
+
+        fclose(file);
     }
 
-    if (totalReceivedDataSize != receivedFileSize) {
-        printf("ERROR: File size mismatch. Expected %lu bytes, but received %lu bytes.\n", receivedFileSize, totalReceivedDataSize);
-    } else {
-        printf("File received successfully. Total size: %lu bytes.\n", totalReceivedDataSize);
+
+    if (llclose(TRUE) == -1) {
+        printf("[ERROR] Link layer error: Failed to close the connection.");
+        return;
     }
 
-    fclose(newFile);
+    printf("[SUCCESS] Connection closed successfully.\n");
+}
+
+
+////////////////////////////////////////////////
+// AUXILIARY FUNCTIONS
+////////////////////////////////////////////////
+
+int readPacketControl(unsigned char *buff, int *isEnd)
+{   
+    if (buff == NULL) return -1;
+
+    size_t pos = 0;
+
+    if(buff[pos] == C_END) *isEnd = TRUE;
+    else if (buff[pos] != C_START) return -1;
+
+    // file size (V1)
+    pos++;
+    if (buff[pos++] != T_FILESIZE) return -1;
+    unsigned char L1 = buff[pos++]; // V1 field size
+
+    unsigned char * V1 = malloc(L1);
+    if(V1 == NULL) return -1;
+
+    memcpy(V1, buff + pos, L1);
+    pos += L1;
+
+    size_t file_size = uchartosize(L1, V1);
+    free(V1);
+
+    // name (V2)
+    if(buff[pos++] != T_FILENAME) return -1;
+    unsigned char L2 = buff[pos++]; // V2 field size
+
+    char * file_name = malloc(MAX_FILENAME);
+    if(file_name == NULL) return -1;
+
+    memcpy(file_name, buff + pos, L2);
+    file_name[L2] = '\0';
+
+
+    if(buff[0] == C_START){
+        printf("[INFO] Started receiving file: '%s'\n", file_name);
+    } else if(buff[0] == C_END){
+        if (file_size != totalBytesRead) {
+            printf("[Warning] The received file size doesn't match the original file\n");
+        }
+
+        printf("[INFO] Finished receiving file: '%s'\n", file_name);
+    }
+    
+    free(file_name);
+    return 1;
+}
+
+int readPacketData(unsigned char *buff, size_t *newSize, unsigned char *dataPacket)
+{
+    if (buff == NULL) return -1;
+    if (buff[0] != C_DATA) return -1;
+
+    *newSize = buff[2] * 256 + buff[3];
+    memcpy(dataPacket, buff + 4, *newSize);
+
+    return 1;
+}
+
+int sendPacketControl(unsigned char C, const char *filename, size_t file_size)
+{
+    if(filename == NULL) return -1;
+    
+    unsigned char L1 = 0;
+    unsigned char * V1 = sizetouchar(file_size, &L1);
+    if(V1 == NULL) return -1;
+
+    unsigned char L2 = (unsigned char) strlen(filename);
+
+    unsigned char *packet = (unsigned char *) malloc(5 + L1 + L2);
+    if(packet == NULL) {
+        free(V1);
+        return -1;
+    }
+
+    size_t pos = 0;
+    packet[pos++] = C;
+
+    // file size (V1)
+    packet[pos++] = T_FILESIZE;
+    packet[pos++] = L1;
+    memcpy(packet + pos, V1, L1); 
+    pos += L1;
+    free(V1);
+
+    // file name (V2)
+    packet[pos++] = T_FILENAME;
+    packet[pos++] = L2;
+    memcpy(packet + pos, filename, L2); 
+    pos += L2;  
+
+    int result = llwrite(packet, (int) pos);
+
     free(packet);
-    free(fileName);
+    return result;
 }
 
-unsigned char *getControlPacket(unsigned int controlField, const char *filename, long int fileSize, unsigned int *controlPacketSize) {
-    int fileSizeBytes = (int) ceil(log2f((float)fileSize) / 8.0);
-    int filenameLength = strlen(filename);
-    *controlPacketSize = 5 + fileSizeBytes + filenameLength;
+int sendPacketData(size_t nBytes, unsigned char *data) 
+{
+    if(data == NULL) return -1;
+    
+    unsigned char *packet = (unsigned char *) malloc(nBytes + 4);
+    if(packet == NULL) return -1;
+    
+    packet[0] = C_DATA;
+    packet[1] = (sequenceNumber++) % 100;
+    packet[2] = nBytes >> 8;
+    packet[3] = nBytes & 0xFF;
 
-    unsigned char *packet = (unsigned char*) malloc(*controlPacketSize);
+    memcpy(packet + 4, data, nBytes);
 
-    unsigned int pos = 0;
+    int result = llwrite(packet, nBytes + 4);
 
-    packet[pos++] = controlField;
+    free(packet);
+    return result;
+}
 
-    // FILE SIZE
-    // Set the file size field (Type: 0, Length: fileSizeBytes)
-    packet[pos++] = 0;
-    packet[pos++] = fileSizeBytes;
+// Function to convert a size_t value to an array of unsigned char (octets)
+/**
+ * @brief Converts a size_t value to an array of unsigned char (octets).
+ *
+ * This function converts a size_t value to an array of unsigned char (octets) and
+ * returns the array. The length of the array is stored in the variable pointed to by size.
+ *
+ * @param value The size_t value to be converted.
+ * @param size Pointer to an unsigned char where the length of the array will be stored.
+ * @return unsigned char* Pointer to the array of octets, or NULL if memory allocation fails.
+ */
+unsigned char * sizetouchar(size_t value, unsigned char *size)
+{
+    if (size == NULL) return NULL; 
+    
+    size_t temp = value, l = 0;
 
-    // Split the file size into fileSizeBytes bytes and store in the packet
-    for (int i = 0; i < fileSizeBytes; i++) {
-        packet[pos + fileSizeBytes - 1 - i] = fileSize & 0xFF;
-        fileSize >>= 8;
+    do {
+        l++;
+        temp >>= 8;
+    } while (temp);
+
+    unsigned char *bytes = malloc(l);
+    if (bytes == NULL) return NULL;
+
+    for (size_t i = 0; i < l; i++) {
+        bytes[i] = value & 0xFF;
+        value >>= 8;
     }
-    pos += fileSizeBytes;
 
-    // FILE NAME
-    // Set the filename field (Type: 1, Length: filenameLength)
-    packet[pos++] = 1;
-    packet[pos++] = filenameLength;
-    memcpy(packet + pos, filename, filenameLength);
-
-    return packet;
+    *size = l;
+    return bytes;
 }
 
-unsigned char *getDataPacket(unsigned int sequenceNumber, const unsigned char *data, unsigned int dataSize, unsigned int *dataPacketSize) {
-    *dataPacketSize = 4 + dataSize;
+// Function to convert an array of unsigned char (octets) to a size_t value
+/**
+ * @brief Converts an array of unsigned char (octets) to a size_t value.
+ *
+ * This function converts an array of unsigned char (octets) to a size_t value.
+ *
+ * @param n The number of octets in the array.
+ * @param numbers Pointer to the array of unsigned char (octets).
+ * @return size_t The converted size_t value.
+ */
+size_t uchartosize (unsigned char n, unsigned char * numbers)
+{
+    if(numbers == NULL) return 0;
 
-    unsigned char *packet = (unsigned char*) malloc(*dataPacketSize);
+    size_t value = 0;
+    size_t power = 1;
 
-    unsigned int pos = 0;
+    for(int i = 0; i < n; i++) {
+        value += numbers[i] * power;
+        power <<= 8;
+    }
 
-    packet[pos++] = C_DATA;
-    packet[pos++] = sequenceNumber % 100;
-    packet[pos++] = (dataSize >> 8) & 0xFF;
-    packet[pos++] = dataSize & 0xFF;
-
-    memcpy(packet + pos, data, dataSize);
-
-    return packet;
+    return value;
 }
+
+
