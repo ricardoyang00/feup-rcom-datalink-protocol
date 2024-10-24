@@ -16,11 +16,11 @@
 
 #define MAX_FILENAME 100
 
-enum state{
+typedef enum {
     RECV_START,
     RECV_CONT,
     RECV_END
-};
+} state;
 
 typedef struct
 {
@@ -29,7 +29,7 @@ typedef struct
     size_t bytesRead;
 } FileProps;
 
-enum state stateReceive = RECV_START;
+state stateReceive = RECV_START;
 FileProps fileProps = {0, "", 0};
 int sequenceNumber = 0;
 
@@ -121,14 +121,15 @@ int sendPacketControl(unsigned char C, const char * filename, size_t file_size)
     return res;
 }
 
-unsigned char * readPacketData(unsigned char *buff, size_t *newSize)
+int readPacketData(unsigned char *buff, size_t *newSize, unsigned char *dataPacket)
 {
-    if (buff == NULL) return NULL;
-    if (buff[0] != C_DATA) return NULL;
+    if (buff == NULL) return -1;
+    if (buff[0] != C_DATA) return -1;
 
     *newSize = buff[2] * 256 + buff[3];
+    memcpy(dataPacket, buff + 4, *newSize);
 
-    return buff + 4;
+    return 1;
 }
 
 int readPacketControl(unsigned char * buff)
@@ -298,8 +299,8 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                     return;
                 }
             }else if(buf[0] == C_DATA){
-                packet = readPacketData(buf, &bytes_readed);
-                if(packet == NULL) {
+                
+                if(readPacketData(buf, &bytes_readed, packet) == -1) {
                     perror("Packet error: Failed to read data packet.");
                     fclose(file);
                     llclose(FALSE);
