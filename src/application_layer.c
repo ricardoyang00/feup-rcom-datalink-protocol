@@ -121,43 +121,48 @@ int readPacketData(unsigned char *buff, size_t *newSize, unsigned char *dataPack
 int readPacketControl(unsigned char * buff, int *isEnd)
 {   
     if (buff == NULL) return -1;
-    size_t indx = 0;
+
+    size_t pos = 0;
+
+    if(buff[pos] == C_END) *isEnd = TRUE;
+    else if (buff[pos] != C_START) return -1;
+
+    // Decode file size (V1)
+    pos++;
+    if (buff[pos++] != T_FILESIZE) return -1;
+    unsigned char L1 = buff[pos++]; // V1 field size
+
+    unsigned char * V1 = malloc(L1);
+    if(V1 == NULL) return -1;
+
+    memcpy(V1, buff + pos, L1);     // get V1 field
+    pos += L1;
+
+    size_t file_size = uchartoi(L1, V1);
+    free(V1);
+
+    // Decode file name (V2)
+    if(buff[pos++] != T_FILENAME) return -1;
+    unsigned char L2 = buff[pos++]; // V2 field size
 
     char * file_name = malloc(MAX_FILENAME);
     if(file_name == NULL) return -1;
 
-    if(buff[indx] == C_END) *isEnd = TRUE;
-    else if (buff[indx] != C_START) {
-        free(file_name);
-        return -1;
-    }
-
-    indx++;
-    if (buff[indx++] != T_FILESIZE) return -1;
-    unsigned char L1 = buff[indx++];
-    unsigned char * V1 = malloc(L1);
-    if(V1 == NULL) return -1;
-    memcpy(V1, buff + indx, L1); indx += L1;
-    size_t file_size = uchartoi(L1, V1);
-    free(V1);
-
-    if(buff[indx++] != T_FILENAME) return -1;
-    unsigned char L2 = buff[indx++];
-    memcpy(file_name, buff + indx, L2);
+    memcpy(file_name, buff + pos, L2); // get V2 field
     file_name[L2] = '\0';
 
     if(buff[0] == C_START){
         fileProperties.size = file_size;
         fileProperties.name = file_name;
         printf("[INFO] Started receiving file: '%s'\n", file_name);
-    }
-    if(buff[0] == C_END){
+    } else if(buff[0] == C_END){
         if (fileProperties.size != totalBytesRead) {
-            perror("Number of bytes read doesn't match size of file\n");
+            printf("[Warning] The received file size doesn't match the original file\n");
         }
         /*if(strcmp(fileProperties.name, file_name)){
-            perror("Names of file given in the start and end packets don't match\n");
+            printf("[Warning] The received file name doesn't match the original file\n");
         }*/
+
         printf("[INFO] Finished receiving file: '%s'\n", file_name);
     }
     
@@ -169,12 +174,12 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                       int nTries, int timeout, const char *filename)
 {
     if(serialPort == NULL || role == NULL || filename == NULL){
-        perror("Initialization error: One or more required arguments are NULL.");
+        printf("[ERROR] Initialization error: One or more required arguments are NULL.");
         return;
     }
 
     if (strlen(filename) > MAX_FILENAME) {
-        printf("The lenght of the given file name is greater than what is supported: %d characters'\n", MAX_FILENAME);
+        printf("[ALERT] The lenght of the given file name is greater than what is supported: %d characters'\n", MAX_FILENAME);
         return;
     }
         
@@ -186,7 +191,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     connectionParametersApp.timeout = timeout;
 
     if (llopen(connectionParametersApp) == -1) {
-        perror("Link layer error: Failed to open the connection.");
+        printf("[ERROR] Link layer error: Failed to open the connection.");
         //llclose(FALSE);
         return;
     }
@@ -195,14 +200,14 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         size_t bytesRead = 0;
         unsigned char *buffer = (unsigned char *) malloc(MAX_PAYLOAD_SIZE + 20);
         if(buffer == NULL) {
-            perror("Memory allocation error at buffer creation.");
+            printf(" [ERROR] Memory allocation error at buffer creation.");
             llclose(FALSE);
             return;
         }
 
         FILE* file = fopen(filename, "rb");
         if(file == NULL) {
-            perror("File error: Unable to open the file for reading.");
+            printf("[ERROR] File error: Unable to open the file for reading.");
             fclose(file);
             free(buffer);
             llclose(FALSE);
@@ -214,7 +219,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         rewind(file);
 
         if(sendPacketControl(C_START, filename, file_size) == -1) {
-            perror("Transmission error: Failed to send the START packet control.");
+            printf("[ERROR] Transmission error: Failed to send the START packet control.");
             fclose(file);
             llclose(FALSE);
             return;
@@ -223,7 +228,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         while ((bytesRead = fread(buffer, 1, MAX_PAYLOAD_SIZE, file)) > 0) {
             
             if(sendPacketData(bytesRead, buffer) == -1){
-                perror("Transmission error: Failed to send the DATA packet control.");
+                printf("[ERROR] Transmission error: Failed to send the DATA packet control.");
                 fclose(file);
                 llclose(FALSE);
                 return;
@@ -231,7 +236,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         }
 
         if(sendPacketControl(C_END, filename, file_size) == -1){
-            perror("Transmission error: Failed to send the END packet control.");
+            printf("[ERROR] Transmission error: Failed to send the END packet control.");
             fclose(file);
             llclose(FALSE);
             return;
@@ -245,7 +250,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         unsigned char * buf = malloc(MAX_PAYLOAD_SIZE + 20);
         unsigned char * packet = malloc(MAX_PAYLOAD_SIZE + 20);
         if(buf == NULL || packet == NULL){
-            perror("Initialization error: One or more buffers pointers are NULL.");
+            printf("[ERROR] Initialization error: One or more buffers pointers are NULL.");
             llclose(FALSE);
             return;
         }
@@ -256,7 +261,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         // FILE *file = fopen(fileProperties.name, "wb");
         
         if(file == NULL) {
-            perror("File error: Unable to open the file for writing.");
+            printf("[ERROR] File error: Unable to open the file for writing.");
             fclose(file);
             llclose(FALSE);
             return;
@@ -269,7 +274,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         while(!isEnd){
 
             if((bytes_readed = llread(buf)) == -1) {
-                perror("Link layer error: Failed to read from the link.");
+                printf("[ERROR] Link layer error: Failed to read from the link.");
                 fclose(file);
                 llclose(FALSE);
                 return;
@@ -278,7 +283,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             if(buf[0] == C_START || buf[0] == C_END){
 
                 if(readPacketControl(buf, &isEnd) == -1) {
-                    perror("Packet error: Failed to read control packet.");
+                    printf("[ERROR] Packet error: Failed to read control packet.");
                     fclose(file);
                     llclose(FALSE);
                     return;
@@ -287,7 +292,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             } else if(buf[0] == C_DATA){
                 
                 if(readPacketData(buf, &bytes_readed, packet) == -1) {
-                    perror("Packet error: Failed to read data packet.");
+                    printf("[ERROR] Packet error: Failed to read data packet.");
                     fclose(file);
                     llclose(FALSE);
                     return;
@@ -302,9 +307,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
 
     if (llclose(TRUE) == -1) {
-        perror("Link layer error: Failed to close the connection.");
+        printf("[ERROR] Link layer error: Failed to close the connection.");
         return;
     }
 
-    printf("[INFO] Connection closed successfully.\n");
+    printf("[SUCCESS] Connection closed successfully.\n");
 }
