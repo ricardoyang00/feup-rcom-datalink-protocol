@@ -33,36 +33,62 @@ int sendPacketData(size_t nBytes, unsigned char *data)
     return result;
 }
 
-unsigned char * itouchar(size_t value, unsigned char *size)
+// Function to convert a size_t value to an array of unsigned char (octets)
+/**
+ * @brief Converts a size_t value to an array of unsigned char (octets).
+ *
+ * This function converts a size_t value to an array of unsigned char (octets) and
+ * returns the array. The length of the array is stored in the variable pointed to by size.
+ *
+ * @param value The size_t value to be converted.
+ * @param size Pointer to an unsigned char where the length of the array will be stored.
+ * @return unsigned char* Pointer to the array of octets, or NULL if memory allocation fails.
+ */
+unsigned char * sizetouchar(size_t value, unsigned char *size)
 {
     if (size == NULL) return NULL; 
     
-    size_t tmp_value = value;
-    size_t length = 0;
+    size_t temp = value, l = 0;
+
     do {
-        length++;
-        tmp_value >>= 8;
-    } while (tmp_value);
+        l++;
+        temp >>= 8;
+    } while (temp);
 
-    unsigned char *bytes = malloc(length);
+    unsigned char *bytes = malloc(l);
     if (bytes == NULL) return NULL;
-    
 
-    for (size_t i = 0; i < length; i++, value >>= 8)
+    for (size_t i = 0; i < l; i++) {
         bytes[i] = value & 0xFF;
+        value >>= 8;
+    }
 
-    *size = length;
+    *size = l;
     return bytes;
 }
 
-size_t uchartoi (unsigned char n, unsigned char * numbers)
+// Function to convert an array of unsigned char (octets) to a size_t value
+/**
+ * @brief Converts an array of unsigned char (octets) to a size_t value.
+ *
+ * This function converts an array of unsigned char (octets) to a size_t value.
+ *
+ * @param n The number of octets in the array.
+ * @param numbers Pointer to the array of unsigned char (octets).
+ * @return size_t The converted size_t value.
+ */
+size_t uchartosize (unsigned char n, unsigned char * numbers)
 {
     if(numbers == NULL) return 0;
+
     size_t value = 0;
     size_t power = 1;
-    for(int i = 0; i < n; i++, power <<= 8){
+
+    for(int i = 0; i < n; i++) {
         value += numbers[i] * power;
+        power <<= 8;
     }
+
     return value;
 }
 
@@ -71,7 +97,7 @@ int sendPacketControl(unsigned char C, const char *filename, size_t file_size)
     if(filename == NULL) return -1;
     
     unsigned char L1 = 0;
-    unsigned char * V1 = itouchar(file_size, &L1);
+    unsigned char * V1 = sizetouchar(file_size, &L1);
     if(V1 == NULL) return -1;
 
     unsigned char L2 = (unsigned char) strlen(filename);
@@ -135,7 +161,7 @@ int readPacketControl(unsigned char *buff, int *isEnd)
     memcpy(V1, buff + pos, L1);
     pos += L1;
 
-    size_t file_size = uchartoi(L1, V1);
+    size_t file_size = uchartosize(L1, V1);
     free(V1);
 
     // name (V2)
