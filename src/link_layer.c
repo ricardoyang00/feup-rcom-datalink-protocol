@@ -40,10 +40,10 @@ void alarmHandler(int signal);
 void alarmDisable();
 void nextNs();
 void nextNr();
-int sendPacketPacket(unsigned char A, unsigned char C);
 int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC2);
-int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED);
-int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECTED, unsigned char A_SEND, unsigned char C_SEND);
+int sendCommandFrame(unsigned char A, unsigned char C);
+int receiveFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTED);
+int receiveRetransmissionFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTED, unsigned char A_SEND, unsigned char C_SEND);
 
 int alarmEnabled = FALSE;
 int alarmCount = 0;
@@ -68,16 +68,16 @@ int llopen(LinkLayer connectionParameters)
     switch (ROLE) {
 
         case LlTx:
-            if (receivePacketRetransmission(A_T, C_UA, A_T, C_SET) != 1) return -1;
+            if (receiveRetransmissionFrame(A_T, C_UA, A_T, C_SET) != 1) return -1;
 
             printf("TR: Connection Established!\n");
 
             break;
 
         case LlRx:
-            if (receivePacket(A_T, C_SET) != 1) return -1;
+            if (receiveFrame(A_T, C_SET) != 1) return -1;
 
-            if (sendPacketPacket(A_T, C_UA) != 1) return -1;
+            if (sendCommandFrame(A_T, C_UA) != 1) return -1;
 
             printf("RCV: Connection Established!\n");
 
@@ -330,7 +330,7 @@ int llread(unsigned char *packet)
 
                         state = START_STATE;
 
-                        if (sendPacketPacket(A_R, C_) != 1) {
+                        if (sendCommandFrame(A_R, C_) != 1) {
                             printf("RCV: Error sending response\n");
                             return -1;
                         }
@@ -370,16 +370,16 @@ int llclose(int showStatistics)
     switch (ROLE) {
 
         case LlTx:
-            if (receivePacketRetransmission(A_R, C_DISC, A_T, C_DISC) == -1) return -1;
+            if (receiveRetransmissionFrame(A_R, C_DISC, A_T, C_DISC) == -1) return -1;
             
-            if (sendPacketPacket(A_R, C_UA) != -1) return closeSerialPort();
+            if (sendCommandFrame(A_R, C_UA) != -1) return closeSerialPort();
 
             break;
             
         case LlRx:
-            if (receivePacket(A_T, C_DISC) == 1) {
-                //if (receivePacketRetransmission(A_T, C_UA, A_R, C_DISC) != 1) return -1; // something goes wrong
-                if (sendPacketPacket(A_R, C_DISC) != 1) return -1;
+            if (receiveFrame(A_T, C_DISC) == 1) {
+                //if (receiveRetransmissionFrame(A_T, C_UA, A_R, C_DISC) != 1) return -1; // something goes wrong
+                if (sendCommandFrame(A_R, C_DISC) != 1) return -1;
             }
             
             break;
@@ -429,7 +429,7 @@ void nextNr()
 
 // Send Supervision Frame and Unnumbered Frame
 // Returns 1 on success, -1 on error
-int sendPacketPacket(unsigned char A, unsigned char C) 
+int sendCommandFrame(unsigned char A, unsigned char C) 
 {
     unsigned char buf_T[5] = {FLAG, A, C, A ^ C, FLAG};
 
@@ -472,7 +472,7 @@ int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC
     return 1;
 }
 
-int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED) 
+int receiveFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTED) 
 {
     LinkLayerState state = START_STATE;
 
@@ -525,15 +525,15 @@ int receivePacket(unsigned char A_EXPECTED, unsigned char C_EXPECTED)
     return 1;
 }
 
-// Receive packet with retransmission
+// Receive Frame with retransmission
 // Returns 1 on success, -1 on error
-int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECTED, unsigned char A_SEND, unsigned char C_SEND) 
+int receiveRetransmissionFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTED, unsigned char A_SEND, unsigned char C_SEND) 
 {
     LinkLayerState state = START_STATE;
 
     (void)signal(SIGALRM, alarmHandler);
 
-    if (sendPacketPacket(A_SEND, C_SEND) != 1) return -1;
+    if (sendCommandFrame(A_SEND, C_SEND) != 1) return -1;
 
     alarm(TIMEOUT); 
 
@@ -592,7 +592,7 @@ int receivePacketRetransmission(unsigned char A_EXPECTED, unsigned char C_EXPECT
 
             if (alarmCount <= RETRANSMISSIONS) {
 
-                if (sendPacketPacket(A_SEND, C_SEND) != 1) {
+                if (sendCommandFrame(A_SEND, C_SEND) != 1) {
                     printf("Error writing send command\n");
                     return -1;
                 }
