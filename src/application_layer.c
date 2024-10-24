@@ -10,13 +10,6 @@
 
 #define MAX_FILENAME 100
 
-typedef struct
-{
-    size_t size;
-    char * name;
-} FileProperties;
-
-FileProperties fileProperties = {0, ""};
 int sequenceNumber = 0;
 size_t totalBytesRead = 0;
 
@@ -157,17 +150,11 @@ int readPacketControl(unsigned char *buff, int *isEnd)
 
 
     if(buff[0] == C_START){
-        fileProperties.size = file_size;
-        fileProperties.name = file_name;
         printf("[INFO] Started receiving file: '%s'\n", file_name);
     } else if(buff[0] == C_END){
-        if (fileProperties.size != totalBytesRead) {
+        if (file_size != totalBytesRead) {
             printf("[Warning] The received file size doesn't match the original file\n");
         }
-        
-        /*if(strcmp(fileProperties.name, file_name)){
-            printf("[Warning] The received file name doesn't match the original file\n");
-        }*/ //use this if you want to check if saved the file with the same name as the one sent
 
         printf("[INFO] Finished receiving file: '%s'\n", file_name);
     }
@@ -260,11 +247,8 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             llclose(FALSE);
             return;
         }
-
-        
+   
         FILE *file = fopen(filename, "wb");
-        // To save the file with the same name as the one sent, use:
-        // FILE *file = fopen(fileProperties.name, "wb");
         
         if(file == NULL) {
             printf("[ERROR] File error: Unable to open the file for writing.");
