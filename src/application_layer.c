@@ -2,17 +2,11 @@
 
 #include "application_layer.h"
 #include "link_layer.h"
+#include "protocol.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include<unistd.h>
-
-#define C_START 1
-#define C_DATA 2
-#define C_END 3
-
-#define T_FILESIZE 0
-#define T_FILENAME 1
+#include <unistd.h>
 
 #define MAX_FILENAME 100
 
@@ -227,10 +221,8 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         }
 
         while ((bytesRead = fread(buffer, 1, MAX_PAYLOAD_SIZE, file)) > 0) {
-            size_t sended_bytes = 0;
-            sended_bytes = sendPacketData(bytesRead, buffer);
             
-            if(sended_bytes == -1){
+            if(sendPacketData(bytesRead, buffer) == -1){
                 perror("Transmission error: Failed to send the DATA packet control.");
                 fclose(file);
                 llclose(FALSE);
