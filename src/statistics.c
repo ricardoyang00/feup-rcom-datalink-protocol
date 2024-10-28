@@ -27,6 +27,6 @@ double optimal_efficiency(int baudrate, int maxPayload) {
 
 // Actual Efficiency =  Actual Received Bitrate / Link Capacity
 double actual_efficiency(Statistics stats, int baudrate) {
-    printf("Received Bit Rate: %f\n", received_bit_rate(stats));
+    //printf("Received Bit Rate: %f\n", received_bit_rate(stats));
     return (double) (received_bit_rate(stats) / baudrate);
 }
