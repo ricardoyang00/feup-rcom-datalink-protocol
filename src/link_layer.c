@@ -14,6 +14,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <signal.h>
+#include <time.h>
 
 // MISC
 #define _POSIX_SOURCE 1 // POSIX compliant source
