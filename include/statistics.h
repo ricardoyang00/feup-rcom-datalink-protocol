@@ -4,9 +4,9 @@
 #include <stdio.h>
 #include <sys/time.h>
 
-#define TPROPAGATION    10  // propagation delay in ms
-#define BCC1_ERROR      1   // percentage % of frames with BCC1 error
-#define BCC2_ERROR      1   // percentage % of frames with BCC2 error
+#define TPROPAGATION    0  // propagation delay in ms
+#define BCC1_ERROR      0   // percentage % of frames with BCC1 error
+#define BCC2_ERROR      0   // percentage % of frames with BCC2 error
 
 #define PINGUIN_SIZE    10968 // bytes
 
