@@ -659,7 +659,7 @@ void showStatisticsTerminal() {
         printf("              Image Upload time: %f seconds\n", timeDiff(statistics.startTime, statistics.endTime));
     } else {
         printf("           Good frames received: %u frames\n", statistics.nFrames);
-        printf("Bytes received after destuffing: %zu bytes\n", statistics.bytesRead);
+        printf("     Received bytes (destuffed): %zu bytes\n", statistics.bytesRead);
         printf("            Image Download time: %f seconds\n", timeDiff(statistics.startTime, statistics.endTime));
         printf("\n");
         printf("              Received bit rate: %f bits/s\n", received_bit_rate(statistics));
