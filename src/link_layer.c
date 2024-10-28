@@ -3,6 +3,7 @@
 #include "link_layer.h"
 #include "serial_port.h"
 #include "protocol.h"
+#include "statistics.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -13,7 +14,6 @@
 #include <termios.h>
 #include <unistd.h>
 #include <signal.h>
-#include <time.h>
 
 // MISC
 #define _POSIX_SOURCE 1 // POSIX compliant source
@@ -29,17 +29,11 @@ typedef enum {
     ESC_STATE
 } LinkLayerState;
 
-typedef struct {
-    int errors;
-    int framesSent;
-    int framesReceived;
-    double propagationDelay;
-} LinkLayerStatistics;
-
 void alarmHandler(int signal);
 void alarmDisable();
 void nextNs();
 void nextNr();
+void showStatisticsTerminal();
 int destuffing(unsigned char *buf, int bufSize, int *newSize, unsigned char *BCC2);
 int sendCommandFrame(unsigned char A, unsigned char C);
 int receiveFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTED);
@@ -50,9 +44,11 @@ int alarmCount = 0;
 int RETRANSMISSIONS = 0;
 int TIMEOUT = 0;
 LinkLayerRole ROLE;
+int BAUDRATE;
 unsigned char C_Ns = 0;
 unsigned char C_Nr = 0;
 
+Statistics statistics = {0, 0, 0.0};
 
 ////////////////////////////////////////////////
 // LLOPEN
@@ -61,6 +57,7 @@ int llopen(LinkLayer connectionParameters)
 {
     if (openSerialPort(connectionParameters.serialPort, connectionParameters.baudRate) < 0) return -1;
 
+    BAUDRATE = connectionParameters.baudRate;
     ROLE = connectionParameters.role;
     RETRANSMISSIONS = connectionParameters.nRetransmissions;
     TIMEOUT = connectionParameters.timeout;
@@ -68,14 +65,22 @@ int llopen(LinkLayer connectionParameters)
     switch (ROLE) {
 
         case LlTx:
+
             if (receiveRetransmissionFrame(A_T, C_UA, A_T, C_SET) != 1) return -1;
+            gettimeofday(&statistics.startTime, NULL);
+            statistics.nFrames++;
 
             printf("[STATUS] Connection Established!\n");
 
             break;
 
         case LlRx:
+
             if (receiveFrame(A_T, C_SET) != 1) return -1;
+            gettimeofday(&statistics.startTime, NULL);
+            statistics.nFrames++;
+            statistics.bytesRead += 5;
+            srand(time(NULL)); // seed random number generator
 
             if (sendCommandFrame(A_T, C_UA) != 1) return -1;
 
@@ -214,6 +219,8 @@ int llwrite(const unsigned char *buf, int bufSize)
             }
 
             else if (byte_C == C_RR(0) || byte_C == C_RR(1)) {
+                statistics.nFrames++;
+
                 alarmDisable();
                 nextNs();
                 free(frame);
@@ -250,6 +257,8 @@ int llwrite(const unsigned char *buf, int bufSize)
 ////////////////////////////////////////////////
 int llread(unsigned char *packet) 
 {
+    usleep(TPROPAGATION * 1000); // simulate propagation delay in ms
+
     unsigned char byte_C = 0;
     int pos = 0;
 
@@ -289,9 +298,12 @@ int llread(unsigned char *packet)
                     break;
 
                 case C_RCV:
-                    if (byte == FLAG) state = FLAG_RCV;
-                    else if ((A_T ^ byte_C) == byte) state = DATA_STATE;
-                    else state = START_STATE;
+                    if ((A_T ^ byte_C) == byte) state = DATA_STATE;
+                    else {
+                        if (byte == FLAG) state = FLAG_RCV;
+                        else state = START_STATE;
+                        statistics.errorFrames++;
+                    }
                     break;
 
                 case DATA_STATE:
@@ -327,20 +339,38 @@ int llread(unsigned char *packet)
                                 C_ = (byte_C == C_INF(0)) ? C_REJ(0) : C_REJ(1);
                             }
                         }
+                    
+                        // Simulate probability of error in BCC1 and BCC2
+                        // Use only for testing purposes
+                        if ((C_Nr == 0 && byte_C == C_INF(0)) || (C_Nr == 1 && byte_C == C_INF(1))) {
+                            if (rand() % 100 <= BCC1_ERROR - 1) {
+                                statistics.errorFrames++;
+                                break;
+                            }
 
-                        state = START_STATE;
+                            if (rand() % 100 <= BCC2_ERROR - 1) C_ = (byte_C == C_INF(0)) ? C_REJ(0) : C_REJ(1);
+
+                        }
+
+                        usleep(TPROPAGATION * 1000); // simulate propagation delay in ms
 
                         if (sendCommandFrame(A_R, C_) != 1) {
                             printf("[ERROR] Error sending response\n");
                             return -1;
                         }
-
+                        
+                        state = START_STATE;
                         if (C_ == C_REJ(0) || C_ == C_REJ(1)) {
+                            statistics.errorFrames++;
+                            printf("[ALERT] Frame rejected, resending frame\n");
                             break;
                         }
 
                         // update sequence number
                         if ((C_Nr == 0 && byte_C == C_INF(0)) || (C_Nr == 1 && byte_C == C_INF(1))) {
+                            statistics.bytesRead += newSize + 6;
+                            statistics.nFrames++;
+
                             nextNr();
                             return newSize;
                         }
@@ -370,17 +400,22 @@ int llclose(int showStatistics)
     switch (ROLE) {
 
         case LlTx:
-            if (receiveRetransmissionFrame(A_R, C_DISC, A_T, C_DISC) == -1) return -1;
+            if (receiveRetransmissionFrame(A_R, C_DISC, A_T, C_DISC) != 1) return -1;
+            statistics.nFrames++;
             
-            if (sendCommandFrame(A_R, C_UA) != -1) return closeSerialPort();
+            if (sendCommandFrame(A_R, C_UA) != 1) return closeSerialPort();
+            statistics.nFrames++;
 
             break;
             
         case LlRx:
             if (receiveFrame(A_T, C_DISC) == 1) {
+                statistics.nFrames++;
+                statistics.bytesRead += 5;
 
                 if (sendCommandFrame(A_R, C_DISC) != 1) return -1;
-
+                statistics.nFrames++;
+                statistics.bytesRead += 5;
             }
             
             break;
@@ -388,6 +423,12 @@ int llclose(int showStatistics)
         default:
             return -1;
 
+    }
+
+    gettimeofday(&statistics.endTime, NULL);
+
+    if (showStatistics) {
+        showStatisticsTerminal();
     }
 
     return closeSerialPort();
@@ -609,5 +650,23 @@ int receiveRetransmissionFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTE
     return -1;
 }
 
-
-
+void showStatisticsTerminal() {
+    const char *role_str = (ROLE == LlTx) ? "TRANSMITTER" : "RECEIVER";
+    printf("\n\t======= [%s STATISTICS] =======\n\n", role_str);
+    if (ROLE == LlTx) {
+        printf("               Good frames sent: %u frames\n", statistics.nFrames);
+        printf("              Image Upload time: %f seconds\n", timeDiff(statistics.startTime, statistics.endTime));
+    } else {
+        printf("           Good frames received: %u frames\n", statistics.nFrames);
+        printf("Bytes received after destuffing: %zu bytes\n", statistics.bytesRead);
+        printf("            Image Download time: %f seconds\n", timeDiff(statistics.startTime, statistics.endTime));
+        printf("\n");
+        printf("              Received bit rate: %f bits/s\n", received_bit_rate(statistics));
+        printf("              Actual efficiency: %f\n", actual_efficiency(statistics, BAUDRATE));
+        printf("             Optimal efficiency: %f\n", optimal_efficiency(BAUDRATE, MAX_PAYLOAD_SIZE));
+        
+    }
+    printf("\n\t=====================================");
+    if (ROLE == LlTx) printf("===");
+    printf("\n\n");
+}

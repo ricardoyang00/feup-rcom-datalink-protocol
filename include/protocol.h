@@ -1,5 +1,8 @@
 // Data Link Protocol
 
+#ifndef _PROTOCOL_H_
+#define _PROTOCOL_H_
+
 #define FLAG        0x7E
 #define ESC         0x7D
 #define A_T         0x03
@@ -22,3 +25,5 @@
 // Packet Type Field
 #define T_FILESIZE 0
 #define T_FILENAME 1
+
+#endif // _PROTOCOL_H_
