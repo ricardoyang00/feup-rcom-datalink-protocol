@@ -659,7 +659,7 @@ void showStatisticsTerminal() {
     } else {
         printf("           Good frames received: %u frames\n", statistics.nFrames);
         printf("Bytes received after destuffing: %zu bytes\n", statistics.bytesRead);
-        printf("            Image Downlaod time: %f seconds\n", timeDiff(statistics.startTime, statistics.endTime));
+        printf("            Image Download time: %f seconds\n", timeDiff(statistics.startTime, statistics.endTime));
         printf("\n");
         printf("              Received bit rate: %f bits/s\n", received_bit_rate(statistics));
         printf("              Actual efficiency: %f\n", actual_efficiency(statistics, BAUDRATE));

@@ -11,13 +11,13 @@ double propagation_to_transmission_ratio(int baudrate, int maxPayload) {
 }
 
 double received_bit_rate(Statistics stats) {
-    return (double) (stats.bytesRead * 8) / timeDiff(stats.startTime, stats.endTime);
+    return (double) (PINGUIN_SIZE * 8) / timeDiff(stats.startTime, stats.endTime);
 }
 
 // FER = P(bcc1 error) + P(bcc2 error) * (1 - P(bcc1 error))
 // probability of any error in either BCC1 or BCC2
 double fer() {
-    return (double) BCC1_ERROR / 100 + (BCC2_ERROR / 100) * (1 - BCC1_ERROR / 100);
+    return (double) (BCC1_ERROR) / 100 + (BCC2_ERROR / 100) * (1 - BCC1_ERROR / 100);
 }
 
 // Optimal Efficiency = (1 - FER) / (1 + 2a)
@@ -27,6 +27,6 @@ double optimal_efficiency(int baudrate, int maxPayload) {
 
 // Actual Efficiency =  Actual Received Bitrate / Link Capacity
 double actual_efficiency(Statistics stats, int baudrate) {
-    double actual_received_bitrate = (double) (PINGUIN_SIZE * 8) / timeDiff(stats.startTime, stats.endTime);
-    return (double) (actual_received_bitrate / baudrate);
+    printf("Received Bit Rate: %f\n", received_bit_rate(stats));
+    return (double) (received_bit_rate(stats) / baudrate);
 }
