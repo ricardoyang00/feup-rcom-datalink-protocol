@@ -49,7 +49,7 @@ int BAUDRATE;
 unsigned char C_Ns = 0;
 unsigned char C_Nr = 0;
 
-Statistics statistics = {0, 0, 0.0};
+Statistics statistics = {0, 0, 0, 0.0};
 
 ////////////////////////////////////////////////
 // LLOPEN
@@ -446,6 +446,7 @@ void alarmHandler(int signal)
     printf("Alarm #%d\n", alarmCount + 1);
     alarmCount++;
     alarmEnabled = TRUE;
+    statistics.retransmissions++;
 }
 
 // Disable alarm
@@ -654,12 +655,14 @@ int receiveRetransmissionFrame(unsigned char A_EXPECTED, unsigned char C_EXPECTE
 void showStatisticsTerminal() {
     const char *role_str = (ROLE == LlTx) ? "TRANSMITTER" : "RECEIVER";
     printf("\n\t======= [%s STATISTICS] =======\n\n", role_str);
-    if (ROLE == LlTx) {
+    if (ROLE == LlTx) { // Transmitter
         printf("               Good frames sent: %u frames\n", statistics.nFrames);
+        printf("          Total retransmissions: %u\n", statistics.retransmissions);
         printf("              Image Upload time: %f seconds\n", timeDiff(statistics.startTime, statistics.endTime));
-    } else {
+    } else {        // Receiver
         printf("           Good frames received: %u frames\n", statistics.nFrames);
-        printf("     Received bytes (destuffed): %zu bytes\n", statistics.bytesRead);
+        printf("           Bad frames discarded: %u frames\n", statistics.errorFrames);
+        printf("     Received bytes (destuffed): %u bytes\n", statistics.bytesRead);
         printf("            Image Download time: %f seconds\n", timeDiff(statistics.startTime, statistics.endTime));
         printf("\n");
         printf("              Received bit rate: %f bits/s\n", received_bit_rate(statistics));

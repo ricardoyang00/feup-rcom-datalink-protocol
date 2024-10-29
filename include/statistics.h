@@ -8,12 +8,11 @@
 #define BCC1_ERROR      0   // percentage % of frames with BCC1 error
 #define BCC2_ERROR      0   // percentage % of frames with BCC2 error
 
-#define PINGUIN_SIZE    10968 // bytes
-
 typedef struct {
-    size_t bytesRead;
+    unsigned int bytesRead;
     unsigned int nFrames;
     unsigned int errorFrames;
+    unsigned int retransmissions;
     struct timeval startTime;
     struct timeval endTime;
 } Statistics;
