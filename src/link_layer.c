@@ -376,7 +376,7 @@ int llread(unsigned char *packet)
                             return newSize;
                         }
 
-                        printf("[ERROR] Discarding frame, duplicate\n");
+                        //printf("[ERROR] Discarding frame, duplicate\n");
                     } else {
                         packet[pos++] = byte;
                     }
