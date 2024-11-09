@@ -11,7 +11,7 @@ double propagation_to_transmission_ratio(int baudrate, int maxPayload) {
 }
 
 double received_bit_rate(Statistics stats) {
-    return (double) (stats.bytesRead * 8) / timeDiff(stats.startTime, stats.endTime);
+    return (double) (FILESIZE * 8) / timeDiff(stats.startTime, stats.endTime);
 }
 
 // FER = P(bcc1 error) + P(bcc2 error) * (1 - P(bcc1 error))
