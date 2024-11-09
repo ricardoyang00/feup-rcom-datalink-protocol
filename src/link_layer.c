@@ -659,6 +659,9 @@ void showStatisticsTerminal() {
         printf("               Good frames sent: %u frames\n", statistics.nFrames);
         printf("          Total retransmissions: %u\n", statistics.retransmissions);
         printf("              Image Upload time: %f seconds\n", timeDiff(statistics.startTime, statistics.endTime));
+        printf("\n");
+        printf("              Actual efficiency: %f\n", actual_efficiency(statistics, BAUDRATE));
+        printf("             Optimal efficiency: %f\n", optimal_efficiency(BAUDRATE, MAX_PAYLOAD_SIZE));
     } else {        // Receiver
         printf("           Good frames received: %u frames\n", statistics.nFrames);
         printf("           Bad frames discarded: %u frames\n", statistics.errorFrames);
@@ -666,9 +669,6 @@ void showStatisticsTerminal() {
         printf("            Image Download time: %f seconds\n", timeDiff(statistics.startTime, statistics.endTime));
         printf("\n");
         printf("              Received bit rate: %f bits/s\n", received_bit_rate(statistics));
-        printf("              Actual efficiency: %f\n", actual_efficiency(statistics, BAUDRATE));
-        printf("             Optimal efficiency: %f\n", optimal_efficiency(BAUDRATE, MAX_PAYLOAD_SIZE));
-        
     }
     printf("\n\t=====================================");
     if (ROLE == LlTx) printf("===");

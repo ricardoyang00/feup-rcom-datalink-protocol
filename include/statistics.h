@@ -8,6 +8,8 @@
 #define BCC1_ERROR      0   // percentage % of frames with BCC1 error
 #define BCC2_ERROR      0   // percentage % of frames with BCC2 error
 
+#define FILESIZE        10968
+
 typedef struct {
     unsigned int bytesRead;
     unsigned int nFrames;
