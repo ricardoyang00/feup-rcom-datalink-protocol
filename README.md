@@ -1,4 +1,5 @@
-# INSTRUCTIONS FOR SERIAL PORT PROTOCOL
+# Data Link Protocol
+This project was developed as part of the Redes e Computadores (RCOM) course to develop a data link protocol to enable file transfer between two computers connected via an RS-232 serial cable, by implementing both transmitter and receiver functionalities.
 
 ## Project Structure
 
@@ -12,9 +13,10 @@
 
 ---
 
-## Instructions to Run the Project
+## Quick Start
 
-> \> For **macOS** users, please read [this guide](cable/macos-cable.md).
+> [!IMPORTANT]  
+> For **macOS** users, please read [this guide](cable/macos-cable.md).
 
 1. **Compile the Application and Virtual Cable Program**
    - Use the provided Makefile to compile the project:
